@@ -518,6 +518,12 @@ ipcMain.handle('account:deleteRemote', async () => {
   try { await account.deleteRemote(); return { ok: true }; } catch (e) { return { ok: false, code: e.code }; }
 });
 
+// Mastertool düğmesi: portal, uygulamanın dili ve o anki gece/gündüz temasıyla tarayıcıda açılır
+ipcMain.handle('app:openMastertool', () => {
+  const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  shell.openExternal(`https://mastertool.download/?lang=${encodeURIComponent(currentLang())}&theme=${theme}`);
+});
+
 // Hesap sayfaları varsayılan tarayıcıda açılır (yalnız bu adresler)
 ipcMain.handle('account:openWeb', (_e, page) => {
   const allowed = { forgot: '/sifremi-unuttum', register: '/kayit', account: '/hesabim' };

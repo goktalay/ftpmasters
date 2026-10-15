@@ -27,6 +27,7 @@ $('#btnNewFolder').innerHTML = icon('folderPlus') + esc(t('common.newFolder'));
 $('#btnNewConn').innerHTML = icon('plus') + esc(t('app.newConn'));
 $('#search').placeholder = t('app.searchPh');
 const paintThemeBtn = themeButton($('#btnTheme'), () => data.settings || {});
+mountMastertool($('.topbar .actions'));
 
 $('#btnSettings').onclick = () => openSettings(data.settings || {});
 $('#content').addEventListener('mousedown', (e) => {

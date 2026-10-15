@@ -59,6 +59,7 @@ setBtn(colTransfers.querySelector('[data-a=clear]'), 'broom', t('tr.clearDone'))
 setBtn(colTransfers.querySelector('[data-a=cancelAll]'), 'stop', t('tr.cancelAll'));
 
 const paintThemeBtn = themeButton($('#btnTheme'), () => data.settings || {});
+mountMastertool($('.bar-actions'));
 $('#btnSettings').onclick = () => openSettings(data.settings || {});
 $('#btnReconnect').onclick = () => connect();
 $('#stLimit').onclick = () => openSettings(data.settings || {}, { focusSpeed: true });

@@ -26,7 +26,8 @@ body {
 }
 .search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(34, 211, 238, .12); }
 .search-ico { position: absolute; inset-inline-start: 12px; top: 11px; color: var(--text-3); }
-.actions { display: flex; gap: 8px; }
+.actions { display: flex; gap: 8px; align-items: center; }
+.actions .mtk-mt { margin-inline-start: 6px; }
 
 .crumbs { display: flex; align-items: center; gap: 4px; padding: 14px 28px 4px; color: var(--text-2); min-height: 44px; }
 .crumb { padding: 4px 9px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; border: 1px dashed transparent; }
