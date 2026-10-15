@@ -1,6 +1,37 @@
 'use strict';
 
-// Uygulama ayarları penceresi ve Gece/Gündüz düğmesi (ana pencere ve site penceresi ortak)
+// Uygulama ayarları penceresi, Gece/Gündüz düğmesi ve hesap durumu (ana pencere ve site penceresi ortak)
+
+// --- Mastertool hesabı ve senkron durumu -------------------------------------------
+let acct = { loggedIn: false };
+const acctListeners = [];
+
+function syncText(st) {
+  if (!st.syncEnabled || st.state === 'off') return t('sync.off');
+  if (st.state === 'syncing') return t('sync.syncing');
+  if (st.state === 'offline') return t('sync.offline');
+  if (st.state === 'error') {
+    if (st.error === 'decrypt_failed') return t('sync.errDecrypt');
+    if (st.error === 'too_large') return t('sync.errTooLarge');
+    return t('sync.error', { msg: st.errorMessage || st.error });
+  }
+  return st.lastSyncAt ? t('acct.lastSync', { time: formatDate(st.lastSyncAt) }) : t('acct.never');
+}
+
+function onAcct(fn) { acctListeners.push(fn); fn(acct); }
+function setAcct(st) {
+  acct = st;
+  const live = document.querySelector('#acct-status');
+  if (live) live.textContent = syncText(acct);
+  acctListeners.forEach((fn) => fn(acct));
+}
+window.api.onAccountStatus(setAcct);
+window.api.accountState().then(setAcct);
+
+async function logout() {
+  const ok = await confirmBox(t('acct.logout'), esc(t('acct.logoutMsg')), { okText: t('acct.logout') });
+  if (ok) window.api.logout();
+}
 
 // Hızlı tema düğmesi: Gece ↔ Gündüz
 function themeButton(btn, getSettings) {
@@ -27,7 +58,22 @@ async function openSettings(s, { focusSpeed = false } = {}) {
   const langOptions = Object.entries(I18N.LANGUAGES)
     .map(([code, l]) => `<option value="${code}" ${code === LANG ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
   const body = h(`<div style="display:grid;gap:16px">
-    <div class="section-title" style="margin:0">${esc(t('set.appearance'))}</div>
+    <div class="section-title" style="margin:0">${esc(t('acct.section'))}</div>
+    <div class="acct-box">
+      <div class="acct-who">${icon('user')}<span>${esc(t('acct.signedInAs', { email: (acct.user && acct.user.email) || acct.email || '' }))}</span></div>
+      <label class="check"><input type="checkbox" id="s-sync" ${acct.syncEnabled ? 'checked' : ''}>
+        <span>${esc(t('acct.syncToggle'))}<small>${esc(t('acct.syncHint'))}</small></span></label>
+      <div class="acct-status">${icon('cloud')}<span id="acct-status">${esc(syncText(acct))}</span></div>
+      <div class="acct-actions">
+        <button class="btn sm" type="button" id="s-syncnow">${icon('refresh')}${esc(t('acct.syncNow'))}</button>
+        <button class="btn sm" type="button" id="s-delremote">${icon('trash')}${esc(t('acct.deleteRemote'))}</button>
+        <button class="btn sm" type="button" id="s-web">${icon('open')}${esc(t('acct.myAccount'))}</button>
+        <span style="flex:1"></span>
+        <button class="btn sm danger" type="button" id="s-logout">${icon('logout')}${esc(t('acct.logout'))}</button>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin:6px 0 0">${esc(t('set.appearance'))}</div>
     <div class="row c-1-1">
       <div class="field"><label>${esc(t('set.theme'))}</label>
         <div class="seg" id="s-theme">
@@ -61,6 +107,23 @@ async function openSettings(s, { focusSpeed = false } = {}) {
   </div>`);
 
   const q = (sel) => body.querySelector(sel);
+
+  // Hesap bölümündeki işlemler anında uygulanır (Kaydet beklemez)
+  q('#s-sync').onchange = async (e) => {
+    const on = e.target.checked;
+    const r = await window.api.setSyncEnabled(on);
+    if (!r.ok) { e.target.checked = !on; toast(t('sync.error', { msg: r.code }), { type: 'err' }); }
+  };
+  q('#s-syncnow').onclick = () => window.api.syncNow();
+  q('#s-web').onclick = () => window.api.openWeb('account');
+  q('#s-delremote').onclick = async () => {
+    const ok = await confirmBox(t('acct.deleteRemote'), esc(t('acct.deleteRemoteMsg')));
+    if (!ok) return;
+    const r = await window.api.deleteRemoteLibrary();
+    if (r.ok) { q('#s-sync').checked = false; toast(t('acct.deleteRemoteDone'), { type: 'ok' }); }
+    else toast(t('sync.error', { msg: r.code }), { type: 'err' });
+  };
+  q('#s-logout').onclick = logout;
   const syncLimit = () => q('#s-kb').disabled = !q('#s-limit').checked;
   q('#s-limit').onchange = syncLimit;
   syncLimit();

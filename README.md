@@ -24,6 +24,9 @@ Derlenmiş exe'ler [Releases](https://github.com/goktalay/ftpmasters/releases) s
   - Paneller arasında ve Windows Gezgini'nden **sürükle-bırak**.
   - **Sağ — Aktarımlar:** her indirme/yükleme bir **ağaç** olarak görünür; klasörler iç içe açılır. Sütunlar **Ad · Boyut · İlerleme · Durum** başlıktan genişletilip daraltılır. Klasörlerin boyutu ve yüzdesi alt dosyalarının toplamıdır. İptal, yeniden dene ve bitenleri temizle seçenekleri var. Ctrl+J ile aç/kapat.
 - **Ayarlar:** Gece / Gündüz / Sistem teması (üst çubuktaki güneş/ay düğmesiyle de değişir), Türkçe / İngilizce, **en yüksek hız sınırı** (KB/s, istenirse açılır; tüm aktarımların toplam hızını sınırlar), genel aktarım varsayılanları.
+- **Mastertool hesabı:** uygulama SSH Master ile aynı Mastertool hesabıyla (e-posta ve şifre) açılır, "Beni hatırla" ile oturum saklanır, çevrimdışıyken son oturumla yerel sitelerle çalışır. Kayıt, şifremi unuttum ve hesap sayfaları [ftpmasters.com](https://ftpmasters.com) üzerinden açılır.
+- **Uçtan uca şifreli senkron:** siteler, klasörler ve genel ayarlar AES-256-GCM ile şifrelenip hesaba yedeklenir; anahtar şifrenizden cihazda türetilir (PBKDF2 + HKDF), sunucu içeriği okuyamaz. SFTP özel anahtarları içerikleriyle taşınır. Yerel klasörler, son klasörler ve panel düzeni her cihazda ayrı kalır. Ayarlar › Hesap ve senkronizasyon'dan kapatılabilir ya da sunucu kopyası silinebilir.
+- **Yeni sürüm bildirimi:** yeni sürüm çıkınca ana pencerede şerit görünür; indirme ftpmasters.com hesabınızdandır.
 - **Güvenlik:** şifreler Windows DPAPI (Electron `safeStorage`) ile şifrelenir. SFTP host anahtarı ilk bağlantıda kaydedilir, değişirse bağlantı reddedilir. Yerelde silme Geri Dönüşüm Kutusu'na taşır.
 
 Veriler `%APPDATA%\FTP Masters\store.json` içinde tutulur.
@@ -56,6 +59,8 @@ git push origin v1.0.1
 ```
 
 Sürüm numarası etiketten alınır, `package.json`'ı elle değiştirmek gerekmez.
+
+Etiketle yayınlanan sürüm ayrıca ftpmasters.com'a yüklenir (`scripts/upload-ftpmasters.sh`, parçalı; depo secret'ı `FTPM_RELEASE_KEY`). Sözleşme: goktalay/fabrika-yonetim › docs/ftpmasters-api.md.
 
 ## Bilinen sınırlar
 

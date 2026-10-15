@@ -13,6 +13,18 @@ contextBridge.exposeInMainWorld('api', {
   lang: ipcRenderer.sendSync('app:lang'),
   version: ipcRenderer.sendSync('app:version'),
 
+  // Mastertool hesabı ve senkron
+  accountState: () => ipcRenderer.invoke('account:state'),
+  login: (email, password, remember) => ipcRenderer.invoke('account:login', { email, password, remember }),
+  logout: () => ipcRenderer.invoke('account:logout'),
+  syncNow: () => ipcRenderer.invoke('account:syncNow'),
+  setSyncEnabled: (on) => ipcRenderer.invoke('account:setSync', on),
+  deleteRemoteLibrary: () => ipcRenderer.invoke('account:deleteRemote'),
+  openWeb: (page) => ipcRenderer.invoke('account:openWeb', page), // 'forgot' | 'register' | 'account'
+  onAccountStatus: on('account:status'),
+  onUpdateAvailable: on('app:update'),
+  onLibraryBackup: on('account:backup'),
+
   // depo
   getStore: () => ipcRenderer.invoke('store:get'),
   onStoreChanged: on('store:changed'),

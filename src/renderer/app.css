@@ -182,3 +182,27 @@ textarea.input.plain { font-family: var(--font); font-size: 13px; min-height: 58
 .tag.proto { font-weight: 600; letter-spacing: .3px; }
 .tag.proto svg.i { color: var(--warn); }
 .tag.proto.secure svg.i { color: var(--ok); }
+
+/* --- Hesap rozeti, senkron durumu ve güncelleme şeridi (SSH Master ile ortak) --------- */
+.account-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding-block: 0; padding-inline: 3px 8px;
+  border-radius: 20px; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer; color: var(--text-2);
+}
+.account-chip:hover { border-color: var(--border-strong); }
+.ac-avatar {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent-grad); color: var(--on-accent); font-weight: 700; font-size: 13px;
+}
+.ac-sync { display: inline-flex; }
+.ac-sync svg.i { width: 16px; height: 16px; }
+.account-chip.s-ok .ac-sync, .account-chip.s-idle .ac-sync { color: var(--ok); }
+.account-chip.s-offline .ac-sync, .account-chip.s-off .ac-sync { color: var(--text-3); }
+.account-chip.s-error .ac-sync { color: var(--err); }
+.account-chip .spin { width: 13px; height: 13px; border-width: 2px; color: var(--accent); }
+
+.update-bar {
+  display: flex; align-items: center; gap: 10px; margin: 12px 28px 0; padding-block: 8px; padding-inline: 14px 10px;
+  border: 1px solid rgba(34, 211, 238, .4); background: rgba(34, 211, 238, .08); border-radius: 10px; color: var(--text);
+}
+.update-bar > span { flex: 1; }
+.update-bar svg.i { color: var(--accent); }

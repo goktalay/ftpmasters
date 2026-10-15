@@ -52,6 +52,51 @@ document.addEventListener('keydown', (e) => {
 });
 
 window.api.onStoreChanged((d) => { data = d; render(); paintThemeBtn(); });
+
+// --- Hesap rozeti ve senkron durumu ---------------------------------------------
+let lastErrorShown = null;
+onAcct((st) => {
+  const b = $('#btnAccount');
+  const name = (st.user && (st.user.name || st.user.email)) || st.email || '?';
+  b.querySelector('.ac-avatar').textContent = name.trim().slice(0, 1).toUpperCase();
+  const s = !st.syncEnabled || st.state === 'off' ? 'off' : st.state || 'idle';
+  b.className = `account-chip s-${s}`;
+  b.querySelector('.ac-sync').innerHTML = s === 'syncing' ? '<span class="spin"></span>' : icon(['off', 'offline', 'error'].includes(s) ? 'cloudOff' : 'cloud');
+  b.title = `${(st.user && st.user.email) || st.email || ''}\n${syncText(st)}`;
+  // Kalıcı hatalar bir kez bildirilir
+  if (st.state === 'error' && st.error !== lastErrorShown) {
+    lastErrorShown = st.error;
+    toast(syncText(st), { type: 'err', timeout: 9000 });
+  }
+  if (st.state === 'ok') lastErrorShown = null;
+});
+
+$('#btnAccount').onclick = (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  contextMenu(r.right - 260, r.bottom + 6, [
+    { label: (acct.user && acct.user.email) || acct.email || '', icon: 'user', disabled: true, action: () => {} },
+    { label: syncText(acct), icon: acct.syncEnabled ? 'cloud' : 'cloudOff', disabled: true, action: () => {} },
+    '-',
+    { label: t('acct.syncNow'), icon: 'refresh', disabled: !acct.syncEnabled, action: () => window.api.syncNow() },
+    { label: t('acct.myAccount'), icon: 'open', action: () => window.api.openWeb('account') },
+    { label: t('app.settings'), icon: 'gear', action: () => openSettings(data.settings || {}) },
+    '-',
+    { label: t('acct.logout'), icon: 'logout', danger: true, action: logout },
+  ]);
+};
+
+// Yeni sürüm bildirimi: exe yalnız hesabın kişiye özel bağlantısından indirilir
+window.api.onUpdateAvailable(({ version }) => {
+  const bar = $('#updateBar');
+  bar.innerHTML = `${icon('download')}<span>${esc(t('update.available', { version }))} — ${esc(t('update.hint'))}</span>
+    <button class="btn sm primary" data-a="open">${esc(t('update.open'))}</button>
+    <button class="icon-btn" data-a="close" title="${esc(t('common.cancel'))}">${icon('x')}</button>`;
+  bar.classList.remove('hidden');
+  bar.querySelector('[data-a="open"]').onclick = () => window.api.openWeb('account');
+  bar.querySelector('[data-a="close"]').onclick = () => bar.classList.add('hidden');
+});
+
+window.api.onLibraryBackup((file) => toast(t('acct.backupNotice'), { sub: file, timeout: 12000 }));
 window.api.getStore().then((d) => { data = d; render(); paintThemeBtn(); });
 
 // --- Yardımcılar -------------------------------------------------------------

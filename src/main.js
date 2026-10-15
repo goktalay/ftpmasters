@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const I18N = require('./i18n');
 const { createRemote, friendlyError, PROTOCOLS } = require('./remote');
 const { Session } = require('./session');
+const { createAccount, API_BASE } = require('./account');
 const { limiter } = require('./throttle');
 
 // Arayüz dili: ayarlarda seçilen ya da sistem dili (desteklenmiyorsa İngilizce)
@@ -26,6 +27,7 @@ const storePath = () => path.join(app.getPath('userData'), 'store.json');
 const defaultStore = () => ({
   folders: [],      // { id, name, parentId }
   connections: [],  // site kayıtları, bkz. conn:save
+  syncMeta: {},     // senkron: öğe id -> { kind, hash, updated_at, rev, device, deleted }
   settings: {
     appTheme: 'dark',       // 'dark' | 'light' | 'system'
     language: null,         // null = sistem dili
@@ -57,6 +59,7 @@ function loadStore() {
   try {
     store = { ...defaultStore(), ...JSON.parse(fs.readFileSync(storePath(), 'utf8')) };
     store.settings = { ...defaultStore().settings, ...(store.settings || {}) };
+    if (!store.syncMeta) store.syncMeta = {};
   } catch {
     store = defaultStore();
   }
@@ -78,9 +81,11 @@ function applySpeedLimit() {
 }
 
 let saveTimer = null;
-function saveStore() {
+// Kütüphane değişikliği kaydedilir ve (3 sn sonra) senkron tetiklenir; cihaza özgü kayıtlar için { sync: false }
+function saveStore({ sync = true } = {}) {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(writeStore, 150);
+  if (sync && account) account.onLocalChange();
 }
 function writeStore() {
   saveTimer = null;
@@ -152,6 +157,81 @@ function siteOptions(id) {
 }
 
 // ---------------------------------------------------------------------------
+// Mastertool hesabı (ftpmasters.com) ve uçtan uca şifreli senkron
+// ---------------------------------------------------------------------------
+let account = null;
+let loginWindow = null;
+let loginNotice = null; // giriş ekranında gösterilecek bilgi (ör. oturum süresi doldu)
+
+function initAccount() {
+  account = createAccount({
+    userDataDir: app.getPath('userData'),
+    appVersion: app.getVersion(),
+    encrypt,
+    decrypt,
+    getStore: () => store,
+    // Senkrondan gelen kütüphaneyi uygula (yeni senkron tetiklemeden)
+    replaceLibrary: ({ folders, connections, settings, syncMeta }) => {
+      const prevLang = currentLang();
+      Object.assign(store, { folders, connections, syncMeta });
+      Object.assign(store.settings, settings);
+      writeStore();
+      applyAppTheme();
+      applySpeedLimit();
+      applyLanguage();
+      broadcastStore();
+      for (const s of sessions.values()) s.pump();
+      if (currentLang() !== prevLang && mainWindow) mainWindow.webContents.reload();
+    },
+    persistStore: writeStore,
+    // Başka bir hesapla giriş: önceki kütüphaneyi yedekle, temiz başla (yerel kopya silinmez)
+    backupAndClearLibrary: () => {
+      const hasData = store.connections.length || store.folders.length;
+      let file = null;
+      if (hasData) {
+        file = path.join(app.getPath('userData'), `store-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+        fs.writeFileSync(file, JSON.stringify(store, null, 2), 'utf8');
+      }
+      Object.assign(store, { folders: [], connections: [], syncMeta: {} });
+      writeStore();
+      return file;
+    },
+    onStatus: (st) => {
+      for (const w of BrowserWindow.getAllWindows()) w.webContents.send('account:status', st);
+    },
+    onSessionExpired: (code) =>
+      showLogin(t(code === 'app_disabled' ? 'auth.errAppDisabled' : code === 'wrong_app' ? 'auth.errWrongApp' : 'auth.errSessionExpired')),
+    onUpdate: (info) => mainWindow && mainWindow.webContents.send('app:update', info),
+  });
+}
+
+function createLoginWindow() {
+  loginWindow = new BrowserWindow({
+    width: 440,
+    height: 640,
+    resizable: false,
+    maximizable: false,
+    backgroundColor: windowBg(),
+    title: 'FTP Masters',
+    icon: ICON,
+    autoHideMenuBar: true,
+    webPreferences,
+  });
+  loginWindow.setMenuBarVisibility(false);
+  loginWindow.loadFile(path.join(__dirname, 'renderer', 'login.html'));
+  loginWindow.on('closed', () => (loginWindow = null));
+}
+
+// Oturum yoksa ya da düştüyse: giriş ekranını aç, diğer tüm pencereleri (site pencereleri dahil) kapat
+function showLogin(notice) {
+  loginNotice = notice || null;
+  if (!loginWindow) createLoginWindow();
+  else loginWindow.focus();
+  for (const w of BrowserWindow.getAllWindows()) if (w !== loginWindow) w.destroy();
+  mainWindow = null;
+}
+
+// ---------------------------------------------------------------------------
 // Pencereler
 // ---------------------------------------------------------------------------
 let mainWindow = null;
@@ -176,6 +256,10 @@ function createMainWindow() {
 }
 
 function showMainWindow() {
+  if (!account || !account.isLoggedIn()) {
+    if (loginWindow) loginWindow.focus(); else showLogin();
+    return;
+  }
   if (!mainWindow) createMainWindow();
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -183,6 +267,7 @@ function showMainWindow() {
 }
 
 function openSiteWindow(id) {
+  if (!account || !account.isLoggedIn()) return;
   const c = store.connections.find((x) => x.id === id);
   if (!c) return;
   const win = new BrowserWindow({
@@ -322,7 +407,7 @@ ipcMain.on('site:lastDir', (event, { remote, local }) => {
   let changed = false;
   if (remote && c.lastRemoteDir !== remote) { c.lastRemoteDir = remote; changed = true; }
   if (local && c.lastLocalDir !== local) { c.lastLocalDir = local; changed = true; }
-  if (changed) saveStore();
+  if (changed) saveStore({ sync: false });
 });
 
 ipcMain.on('transfer:cancel', (event, id) => sessions.get(event.sender.id)?.cancel(id));
@@ -401,6 +486,43 @@ ipcMain.handle('dialog:pickKey', async (event) => {
 // Depo işlemleri
 // ---------------------------------------------------------------------------
 ipcMain.handle('store:get', () => publicStore());
+
+// --- Hesap ---------------------------------------------------------------------
+ipcMain.handle('account:state', () => ({ ...account.state(), notice: loginNotice, appVersion: app.getVersion() }));
+
+ipcMain.handle('account:login', async (_e, { email, password, remember }) => {
+  try {
+    const { backupFile } = await account.login(email, password, remember);
+    loginNotice = null;
+    // Önce ana pencere açılır, sonra giriş penceresi kapanır (aksi halde uygulama kapanırdı)
+    if (!mainWindow) createMainWindow();
+    if (loginWindow) loginWindow.destroy();
+    if (backupFile) mainWindow.webContents.once('did-finish-load', () => mainWindow.webContents.send('account:backup', backupFile));
+    account.start();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, code: e.code || 'error', message: e.message };
+  }
+});
+
+ipcMain.handle('account:logout', async () => {
+  await account.logout();
+  showLogin();
+});
+
+ipcMain.handle('account:syncNow', () => account.syncNow());
+ipcMain.handle('account:setSync', async (_e, on) => {
+  try { await account.setSyncEnabled(on); return { ok: true }; } catch (e) { return { ok: false, code: e.code }; }
+});
+ipcMain.handle('account:deleteRemote', async () => {
+  try { await account.deleteRemote(); return { ok: true }; } catch (e) { return { ok: false, code: e.code }; }
+});
+
+// Hesap sayfaları varsayılan tarayıcıda açılır (yalnız bu adresler)
+ipcMain.handle('account:openWeb', (_e, page) => {
+  const allowed = { forgot: '/sifremi-unuttum', register: '/kayit', account: '/hesabim' };
+  if (allowed[page]) shell.openExternal(API_BASE + allowed[page]);
+});
 ipcMain.on('app:lang', (e) => { e.returnValue = currentLang(); });
 ipcMain.on('app:version', (e) => { e.returnValue = app.getVersion(); });
 
@@ -559,13 +681,14 @@ const QUIET_SETTINGS = ['localWidth', 'localOpen', 'transferWidth', 'transferOpe
 
 ipcMain.handle('settings:set', (_e, patch) => {
   Object.assign(store.settings, patch);
-  saveStore();
+  saveStore({ sync: Object.keys(patch).some((k) => !QUIET_SETTINGS.includes(k)) });
   if ('appTheme' in patch) applyAppTheme();
   if ('speedLimitOn' in patch || 'speedLimitKB' in patch) applySpeedLimit();
   if ('language' in patch) {
     applyLanguage();
     // Site pencereleri yeniden yüklenirse süren aktarımlar kesilir; yalnızca ana pencere yenilenir
     if (mainWindow) mainWindow.webContents.reload();
+    if (loginWindow) loginWindow.webContents.reload();
     return;
   }
   if (Object.keys(patch).some((k) => !QUIET_SETTINGS.includes(k))) broadcastStore();
@@ -592,8 +715,16 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     loadStore();
-    createMainWindow();
-    app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createMainWindow());
+    initAccount();
+    // Uygulama girişsiz açılmaz. "Beni hatırla" ile saklı oturum varsa doğrudan açılır
+    // (çevrimdışıyken yerel kütüphaneyle), oturum sunucuda düşmüşse giriş ekranına dönülür.
+    if (account.isLoggedIn()) {
+      createMainWindow();
+      account.start();
+    } else {
+      createLoginWindow();
+    }
+    app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && showMainWindow());
   });
 
   app.on('window-all-closed', () => {
