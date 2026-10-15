@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld('api', {
   onUpdateAvailable: on('app:update'),
   onLibraryBackup: on('account:backup'),
   openMastertool: () => ipcRenderer.invoke('app:openMastertool'),
+  checkUpdate: () => ipcRenderer.invoke('app:checkUpdate'),
+  about: () => ipcRenderer.invoke('app:about'),
+  openLicenses: () => ipcRenderer.invoke('app:openLicenses'),
 
   // depo
   getStore: () => ipcRenderer.invoke('store:get'),

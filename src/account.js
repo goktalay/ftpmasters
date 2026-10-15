@@ -481,8 +481,15 @@ function createAccount(deps) {
     } catch { /* bildirim isteğe bağlı */ }
   }
 
+  // Ayarlar > Hakkında: son sürüm bilgisini döndürür (bildirim göstermeden)
+  async function latestRelease() {
+    const r = await authed('GET', '/api/fm/releases/latest');
+    return { version: r && r.version, newer: !!(r && r.version && compareVersions(r.version, deps.appVersion) > 0) };
+  }
+
   return {
     isLoggedIn: () => !!session,
+    latestRelease,
     state: publicState,
     login, logout, start, syncNow, onLocalChange, setSyncEnabled, deleteRemote, checkUpdate,
     // testler için

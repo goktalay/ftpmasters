@@ -1,7 +1,7 @@
 {
   "name": "ftp-masters",
   "productName": "FTP Masters",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "FTP, FTPS ve SFTP site yöneticisi ve dosya aktarım istemcisi",
   "main": "src/main.js",
   "author": "FTP Masters",
@@ -25,13 +25,30 @@
   "build": {
     "appId": "com.ftpmasters.app",
     "productName": "FTP Masters",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["src/**/*", "build/icon.png", "package.json"],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
     "win": {
       "icon": "build/icon.ico",
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -39,8 +56,12 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "FTP Masters"
+      "shortcutName": "FTP Masters",
+      "include": "build/installer.nsh",
+      "menuCategory": "Master Tool"
     },
-    "portable": { "artifactName": "FTP-Masters-Portable-${version}.exe" }
+    "portable": {
+      "artifactName": "FTP-Masters-Portable-${version}.exe"
+    }
   }
 }

@@ -51,62 +51,124 @@ function themeButton(btn, getSettings) {
 
 const CONFLICT_OPTS = () => [['overwrite', t('opt.conflictOverwrite')], ['rename', t('opt.conflictRename')], ['skip', t('opt.conflictSkip')]];
 const TRANSFER_TYPES = () => [['binary', t('type.binary')], ['ascii', t('type.ascii')], ['auto', t('type.auto')]];
+// Hakkında › açık kaynak bileşenleri
+const OSS = [
+  ['FTP Masters', 'MIT'], ['Electron', 'MIT'], ['Chromium', 'BSD-3-Clause +'], ['Node.js', 'MIT'],
+  ['basic-ftp', 'MIT'], ['ssh2', 'MIT'],
+];
 const options = (list, v) => list.map(([k, l]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
 
 async function openSettings(s, { focusSpeed = false } = {}) {
-  let appTheme = s.appTheme || 'dark';
+  let appTheme = s.appTheme || 'system';
+  const about = await window.api.about();
   const langOptions = Object.entries(I18N.LANGUAGES)
     .map(([code, l]) => `<option value="${code}" ${code === LANG ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
-  const body = h(`<div style="display:grid;gap:16px">
-    <div class="section-title" style="margin:0">${esc(t('acct.section'))}</div>
-    <div class="acct-box">
-      <div class="acct-who">${icon('user')}<span>${esc(t('acct.signedInAs', { email: (acct.user && acct.user.email) || acct.email || '' }))}</span></div>
-      <label class="check"><input type="checkbox" id="s-sync" ${acct.syncEnabled ? 'checked' : ''}>
-        <span>${esc(t('acct.syncToggle'))}<small>${esc(t('acct.syncHint'))}</small></span></label>
-      <div class="acct-status">${icon('cloud')}<span id="acct-status">${esc(syncText(acct))}</span></div>
-      <div class="acct-actions">
-        <button class="btn sm" type="button" id="s-syncnow">${icon('refresh')}${esc(t('acct.syncNow'))}</button>
-        <button class="btn sm" type="button" id="s-delremote">${icon('trash')}${esc(t('acct.deleteRemote'))}</button>
-        <button class="btn sm" type="button" id="s-web">${icon('open')}${esc(t('acct.myAccount'))}</button>
-        <span style="flex:1"></span>
-        <button class="btn sm danger" type="button" id="s-logout">${icon('logout')}${esc(t('acct.logout'))}</button>
-      </div>
-    </div>
+  // Mastertool ortak iskeleti: Genel · Hesap · uygulamaya özel (Aktarımlar) · Hakkında; solda sekmeler
+  const tabs = [
+    ['general', 'gear', t('set.general')],
+    ['account', 'user', t('set.account')],
+    ['transfers', 'swap', t('set.tabTransfers')],
+    ['about', 'info', t('set.about')],
+  ];
+  const body = h(`<div class="set-wrap">
+    <nav class="set-nav">${tabs.map(([k, ic, label]) => `<button type="button" data-tab="${k}">${icon(ic)}<span>${esc(label)}</span></button>`).join('')}</nav>
+    <div class="set-pages">
+      <section data-page="general">
+        <div class="field"><label>${esc(t('set.language'))}</label><select class="input" id="s-lang">${langOptions}</select>
+          <small class="set-hint">${esc(t('set.languageHint'))}</small></div>
+        <div class="field"><label>${esc(t('set.theme'))}</label>
+          <div class="seg" id="s-theme">
+            <button data-v="dark">${icon('moon')}${esc(t('set.themeDark'))}</button>
+            <button data-v="light">${icon('sun')}${esc(t('set.themeLight'))}</button>
+            <button data-v="system">${icon('monitor')}${esc(t('set.themeSystem'))}</button>
+          </div></div>
+        <div class="section-title">${esc(t('set.startup'))}</div>
+        <label class="check"><input type="checkbox" id="s-login" ${about.openAtLogin ? 'checked' : ''}>
+          <span>${esc(t('set.openAtLogin'))}<small>${esc(t('set.openAtLoginHint'))}</small></span></label>
+      </section>
 
-    <div class="section-title" style="margin:6px 0 0">${esc(t('set.appearance'))}</div>
-    <div class="row c-1-1">
-      <div class="field"><label>${esc(t('set.theme'))}</label>
-        <div class="seg" id="s-theme">
-          <button data-v="dark">${icon('moon')}${esc(t('set.themeDark'))}</button>
-          <button data-v="light">${icon('sun')}${esc(t('set.themeLight'))}</button>
-          <button data-v="system">${icon('monitor')}${esc(t('set.themeSystem'))}</button>
-        </div></div>
-      <div class="field"><label>${esc(t('set.language'))}</label><select class="input" id="s-lang">${langOptions}</select></div>
-    </div>
+      <section data-page="account">
+        <div class="acct-box">
+          <div class="acct-who">${icon('user')}<span>${esc(t('acct.signedInAs', { email: (acct.user && acct.user.email) || acct.email || '' }))}</span></div>
+          <label class="check"><input type="checkbox" id="s-sync" ${acct.syncEnabled ? 'checked' : ''}>
+            <span>${esc(t('acct.syncToggle'))}<small>${esc(t('acct.syncHint'))}</small></span></label>
+          <div class="acct-status">${icon('cloud')}<span id="acct-status">${esc(syncText(acct))}</span></div>
+          <div class="acct-actions">
+            <button class="btn sm" type="button" id="s-syncnow">${icon('refresh')}${esc(t('acct.syncNow'))}</button>
+            <button class="btn sm" type="button" id="s-delremote">${icon('trash')}${esc(t('acct.deleteRemote'))}</button>
+          </div>
+          <div class="acct-actions">
+            <button class="btn sm" type="button" id="s-web">${icon('open')}${esc(t('acct.myAccount'))}</button>
+            <span style="flex:1"></span>
+            <button class="btn sm danger" type="button" id="s-logout">${icon('logout')}${esc(t('acct.logout'))}</button>
+          </div>
+        </div>
+      </section>
 
-    <div class="section-title" style="margin:6px 0 0">${esc(t('set.speed'))}</div>
-    <label class="check"><input type="checkbox" id="s-limit" ${s.speedLimitOn ? 'checked' : ''}>
-      <span>${esc(t('set.speedOn'))}<small>${esc(t('set.speedHint'))}</small></span></label>
-    <div class="row c-1-1">
-      <div class="field"><label>${esc(t('set.speedMax'))}</label>
-        <div class="unit-wrap"><input class="input" id="s-kb" type="number" min="1" max="10000000" value="${esc(s.speedLimitKB || 1024)}"><span>KB/s</span></div></div>
-      <div class="field"><label>&nbsp;</label><div class="chips" id="s-presets"></div></div>
-    </div>
+      <section data-page="transfers">
+        <div class="section-title">${esc(t('set.speed'))}</div>
+        <label class="check"><input type="checkbox" id="s-limit" ${s.speedLimitOn ? 'checked' : ''}>
+          <span>${esc(t('set.speedOn'))}<small>${esc(t('set.speedHint'))}</small></span></label>
+        <div class="row c-1-1">
+          <div class="field"><label>${esc(t('set.speedMax'))}</label>
+            <div class="unit-wrap"><input class="input" id="s-kb" type="number" min="1" max="10000000" value="${esc(s.speedLimitKB || 1024)}"><span>KB/s</span></div></div>
+          <div class="field"><label>&nbsp;</label><div class="chips" id="s-presets"></div></div>
+        </div>
+        <div class="section-title">${esc(t('set.transfers'))}</div>
+        <div class="row c-1-1">
+          <div class="field"><label>${esc(t('opt.maxConcurrent'))}</label><input class="input" id="s-conc" type="number" min="1" max="20" value="${esc(s.maxConcurrent || 4)}"></div>
+          <div class="field"><label>${esc(t('type.transferType'))}</label><select class="input" id="s-ttype">${options(TRANSFER_TYPES(), s.transferType || 'binary')}</select></div>
+        </div>
+        <div class="row c-1-1">
+          <div class="field"><label>${esc(t('opt.retry'))}</label><input class="input" id="s-retry" type="number" min="0" max="99" value="${esc(s.retryAttempts ?? 3)}"></div>
+          <div class="field"><label>${esc(t('opt.retryDelay'))}</label><input class="input" id="s-delay" type="number" min="0" max="3600" value="${esc(s.retryDelay ?? 10)}"></div>
+        </div>
+        <div class="field"><label>${esc(t('opt.conflict'))}</label><select class="input" id="s-conflict">${options(CONFLICT_OPTS(), s.conflict || 'overwrite')}</select></div>
+      </section>
 
-    <div class="section-title" style="margin:6px 0 0">${esc(t('set.transfers'))}</div>
-    <div class="row c-1-1">
-      <div class="field"><label>${esc(t('opt.maxConcurrent'))}</label><input class="input" id="s-conc" type="number" min="1" max="20" value="${esc(s.maxConcurrent || 4)}"></div>
-      <div class="field"><label>${esc(t('type.transferType'))}</label><select class="input" id="s-ttype">${options(TRANSFER_TYPES(), s.transferType || 'binary')}</select></div>
+      <section data-page="about">
+        <div class="about-head">
+          <img src="../../build/icon.png" alt="">
+          <div><div class="about-name">FTP Masters</div>
+            <div class="about-ver">${esc(t('about.version', { version: about.version }))}</div></div>
+        </div>
+        <div class="set-hint">${esc(t('about.family'))}</div>
+        <div class="acct-actions">
+          <button class="btn sm" type="button" id="s-update">${icon('refresh')}${esc(t('about.checkUpdate'))}</button>
+          <span class="about-update" id="s-update-result"></span>
+        </div>
+        <div class="section-title">${esc(t('about.licenses'))}</div>
+        <div class="set-hint">${esc(t('about.licensesIntro'))}</div>
+        <ul class="oss">${OSS.map(([n, l]) => `<li><span>${esc(n)}</span><span>${esc(l)}</span></li>`).join('')}</ul>
+        <div class="acct-actions">
+          <button class="btn sm" type="button" id="s-licenses">${icon('file')}${esc(t('about.chromium'))}</button>
+          <span class="set-hint">Electron ${esc(about.electron)} · Chromium ${esc(about.chrome)}</span>
+        </div>
+      </section>
     </div>
-    <div class="row c-1-1">
-      <div class="field"><label>${esc(t('opt.retry'))}</label><input class="input" id="s-retry" type="number" min="0" max="99" value="${esc(s.retryAttempts ?? 3)}"></div>
-      <div class="field"><label>${esc(t('opt.retryDelay'))}</label><input class="input" id="s-delay" type="number" min="0" max="3600" value="${esc(s.retryDelay ?? 10)}"></div>
-    </div>
-    <div class="field"><label>${esc(t('opt.conflict'))}</label><select class="input" id="s-conflict">${options(CONFLICT_OPTS(), s.conflict || 'overwrite')}</select></div>
-    <div class="about">${icon('info')} FTP Masters ${esc(window.api.version || '')}</div>
   </div>`);
 
   const q = (sel) => body.querySelector(sel);
+  const showTab = (k) => {
+    body.querySelectorAll('.set-nav button').forEach((b) => b.classList.toggle('on', b.dataset.tab === k));
+    body.querySelectorAll('.set-pages section').forEach((p) => p.classList.toggle('hidden', p.dataset.page !== k));
+  };
+  body.querySelectorAll('.set-nav button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
+  showTab(focusSpeed ? 'transfers' : 'general');
+
+  // Hakkında
+  q('#s-update').onclick = async (e) => {
+    const out = q('#s-update-result');
+    out.className = 'about-update';
+    e.currentTarget.disabled = true;
+    out.textContent = t('about.checking');
+    const r = await window.api.checkUpdate();
+    e.currentTarget.disabled = false;
+    if (!r.ok) { out.classList.add('err'); out.textContent = t('about.checkFailed', { msg: r.message || r.code }); return; }
+    if (r.newer) { out.classList.add('new'); out.innerHTML = `${esc(t('about.newVersion', { version: r.version }))} · <a href="#" id="s-get">${esc(t('update.open'))}</a>`; out.querySelector('#s-get').onclick = (ev) => { ev.preventDefault(); window.api.openWeb('account'); }; }
+    else { out.classList.add('ok'); out.textContent = t('about.upToDate'); }
+  };
+  q('#s-licenses').onclick = () => window.api.openLicenses();
 
   // Hesap bölümündeki işlemler anında uygulanır (Kaydet beklemez)
   q('#s-sync').onchange = async (e) => {
@@ -145,7 +207,7 @@ async function openSettings(s, { focusSpeed = false } = {}) {
 
   const clamp = (v, min, max, def) => { const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : def; };
   const res = await openModal({
-    title: t('set.title'), iconName: 'gear', width: 600, body,
+    title: t('set.title'), iconName: 'gear', width: 760, body,
     onMount: () => { if (focusSpeed) setTimeout(() => { q('#s-kb').focus(); q('#s-kb').select(); }, 60); },
     buttons: [
       { label: t('common.cancel'), value: null },
@@ -154,6 +216,7 @@ async function openSettings(s, { focusSpeed = false } = {}) {
         onClick: () => ({
           appTheme,
           language: q('#s-lang').value,
+          openAtLogin: q('#s-login').checked,
           speedLimitOn: q('#s-limit').checked,
           speedLimitKB: clamp(q('#s-kb').value, 1, 10000000, 1024),
           maxConcurrent: clamp(q('#s-conc').value, 1, 20, 4),

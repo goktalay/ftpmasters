@@ -163,15 +163,6 @@ body {
 
 /* --- Site formu: sekmeler ----------------------------------------------------- */
 .site-form { display: grid; gap: 14px; }
-.tabs { display: flex; gap: 4px; padding: 3px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; }
-.tabs button {
-  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  height: 32px; border: none; border-radius: 7px; background: transparent; color: var(--text-2); cursor: pointer;
-}
-.tabs button:hover { color: var(--text); }
-.tabs button.on { background: var(--surface-3); color: var(--text); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
-.tabs button svg.i { width: 14px; height: 14px; }
-.tab-panel { display: grid; gap: 14px; align-content: start; min-height: 330px; animation: fade .12s ease-out; }
 textarea.input.plain { font-family: var(--font); font-size: 13px; min-height: 58px; }
 .proto-note {
   display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 9px; font-size: 12.5px; line-height: 1.5;

@@ -23,7 +23,7 @@ Derlenmiş exe'ler [Releases](https://github.com/goktalay/ftpmasters/releases) s
   - **Orta — Sunucu:** uzak klasörler ve dosyalar. Sağ tık → **İndir**: soldaki açık Windows klasörüne iner. Yeniden adlandırma, silme ve yeni klasör de burada.
   - Paneller arasında ve Windows Gezgini'nden **sürükle-bırak**.
   - **Sağ — Aktarımlar:** her indirme/yükleme bir **ağaç** olarak görünür; klasörler iç içe açılır. Sütunlar **Ad · Boyut · İlerleme · Durum** başlıktan genişletilip daraltılır. Klasörlerin boyutu ve yüzdesi alt dosyalarının toplamıdır. İptal, yeniden dene ve bitenleri temizle seçenekleri var. Ctrl+J ile aç/kapat.
-- **Ayarlar:** Gece / Gündüz / Sistem teması (üst çubuktaki güneş/ay düğmesiyle de değişir), Türkçe / İngilizce, **en yüksek hız sınırı** (KB/s, istenirse açılır; tüm aktarımların toplam hızını sınırlar), genel aktarım varsayılanları.
+- **Ayarlar** (Mastertool ortak iskeleti: Genel · Hesap · Aktarımlar · Hakkında): 8 dil — Türkçe, English, Français, Deutsch, Español, العربية (sağdan sola), 中文, Русский; ilk açılışta Windows dili, listede yoksa İngilizce. Gece / Gündüz / Sistem teması (varsayılan Sistem; üst çubuktaki güneş/ay düğmesiyle de değişir), Windows oturumu açılınca başlat, **en yüksek hız sınırı** (KB/s, istenirse açılır; tüm aktarımların toplam hızını sınırlar), genel aktarım varsayılanları.
 - **Mastertool hesabı:** uygulama SSH Master ile aynı Mastertool hesabıyla (e-posta ve şifre) açılır, "Beni hatırla" ile oturum saklanır, çevrimdışıyken son oturumla yerel sitelerle çalışır. Kayıt, şifremi unuttum ve hesap sayfaları [ftpmasters.com](https://ftpmasters.com) üzerinden açılır.
 - **Uçtan uca şifreli senkron:** siteler, klasörler ve genel ayarlar AES-256-GCM ile şifrelenip hesaba yedeklenir; anahtar şifrenizden cihazda türetilir (PBKDF2 + HKDF), sunucu içeriği okuyamaz. SFTP özel anahtarları içerikleriyle taşınır. Yerel klasörler, son klasörler ve panel düzeni her cihazda ayrı kalır. Ayarlar › Hesap ve senkronizasyon'dan kapatılabilir ya da sunucu kopyası silinebilir.
 - **Mastertool düğmesi:** ana pencerenin ve site penceresinin sağ üst köşesinde, web siteleriyle aynı animasyonlu düğme; tıklanınca mastertool.download uygulamanın dili ve gece/gündüz temasıyla tarayıcıda açılır. Windows'ta "animasyonları azalt" açıksa hareket durur.
@@ -31,6 +31,10 @@ Derlenmiş exe'ler [Releases](https://github.com/goktalay/ftpmasters/releases) s
 - **Güvenlik:** şifreler Windows DPAPI (Electron `safeStorage`) ile şifrelenir. SFTP host anahtarı ilk bağlantıda kaydedilir, değişirse bağlantı reddedilir. Yerelde silme Geri Dönüşüm Kutusu'na taşır.
 
 Veriler `%APPDATA%\FTP Masters\store.json` içinde tutulur.
+
+## Kurulum klasörü
+
+Kurulum varsayılan olarak `C:\Program Files\Mastertool\FTP Masters` (yalnız bu kullanıcı için kurulursa `%LOCALAPPDATA%\Programs\Mastertool\FTP Masters`) klasörüne yapılır; Başlat menüsünde **Master Tool › FTP Masters** altında görünür. Eski konumdaki kurulum yükseltmede kaldırılır, `%APPDATA%\FTP Masters` verisi korunur (`build/installer.nsh`, tüm Mastertool uygulamalarında ortak).
 
 ## Geliştirme
 

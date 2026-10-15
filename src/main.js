@@ -29,7 +29,7 @@ const defaultStore = () => ({
   connections: [],  // site kayıtları, bkz. conn:save
   syncMeta: {},     // senkron: öğe id -> { kind, hash, updated_at, rev, device, deleted }
   settings: {
-    appTheme: 'dark',       // 'dark' | 'light' | 'system'
+    appTheme: 'system',     // 'dark' | 'light' | 'system' (Mastertool standardı: varsayılan Sistem)
     language: null,         // null = sistem dili
     speedLimitOn: false,    // global hız sınırı açık mı
     speedLimitKB: 1024,     // KB/sn
@@ -525,9 +525,39 @@ ipcMain.handle('app:openMastertool', () => {
 });
 
 // Hesap sayfaları varsayılan tarayıcıda açılır (yalnız bu adresler)
+// Web sayfaları uygulamanın diliyle ve o anki temasıyla açılır (Mastertool standardı)
+const webQuery = () => `lang=${encodeURIComponent(currentLang())}&theme=${nativeTheme.shouldUseDarkColors ? 'dark' : 'light'}&app=fm`;
+
 ipcMain.handle('account:openWeb', (_e, page) => {
   const allowed = { forgot: '/sifremi-unuttum', register: '/kayit', account: '/hesabim' };
-  if (allowed[page]) shell.openExternal(API_BASE + allowed[page]);
+  if (allowed[page]) shell.openExternal(`${API_BASE}${allowed[page]}?${webQuery()}`);
+});
+
+// Windows oturumu açılınca başlat (cihaza özgü; senkronlanmaz). Mastertool ortak iskeletiyle aynı
+// argümanla kaydedilir; FTP Masters'ta tepsi olmadığından --hidden ile de normal açılır.
+function applyOpenAtLogin() {
+  if (!app.isPackaged) return;
+  app.setLoginItemSettings({ openAtLogin: !!store.settings.openAtLogin, args: ['--hidden'] });
+}
+
+// Ayarlar > Hakkında
+ipcMain.handle('app:about', () => ({
+  version: app.getVersion(),
+  electron: process.versions.electron,
+  chrome: process.versions.chrome,
+  openAtLogin: app.isPackaged ? app.getLoginItemSettings({ args: ['--hidden'] }).openAtLogin : !!store.settings.openAtLogin,
+}));
+
+// Chromium/Electron lisans dosyaları kurulum klasöründe durur
+ipcMain.handle('app:openLicenses', () => {
+  const file = path.join(path.dirname(process.execPath), 'LICENSES.chromium.html');
+  if (fs.existsSync(file)) return shell.openPath(file);
+  return shell.openExternal('https://www.electronjs.org/docs/latest#license');
+});
+
+// Ayarlar > Hakkında: güncelleme denetimi
+ipcMain.handle('app:checkUpdate', async () => {
+  try { return { ok: true, ...(await account.latestRelease()) }; } catch (e) { return { ok: false, code: e.code || 'error', message: e.message }; }
 });
 ipcMain.on('app:lang', (e) => { e.returnValue = currentLang(); });
 ipcMain.on('app:version', (e) => { e.returnValue = app.getVersion(); });
@@ -683,13 +713,14 @@ ipcMain.handle('folder:delete', (_e, id) => {
 });
 
 // Görünüm ayarları (panel genişlikleri vb.) sessizce kaydedilir, yayınlanmaz
-const QUIET_SETTINGS = ['localWidth', 'localOpen', 'transferWidth', 'transferOpen', 'trCols', 'localDir', 'showHidden'];
+const QUIET_SETTINGS = ['localWidth', 'localOpen', 'transferWidth', 'transferOpen', 'trCols', 'localDir', 'showHidden', 'openAtLogin'];
 
 ipcMain.handle('settings:set', (_e, patch) => {
   Object.assign(store.settings, patch);
   saveStore({ sync: Object.keys(patch).some((k) => !QUIET_SETTINGS.includes(k)) });
   if ('appTheme' in patch) applyAppTheme();
   if ('speedLimitOn' in patch || 'speedLimitKB' in patch) applySpeedLimit();
+  if ('openAtLogin' in patch) applyOpenAtLogin();
   if ('language' in patch) {
     applyLanguage();
     // Site pencereleri yeniden yüklenirse süren aktarımlar kesilir; yalnızca ana pencere yenilenir
