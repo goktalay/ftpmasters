@@ -1,0 +1,46 @@
+{
+  "name": "ftp-masters",
+  "productName": "FTP Masters",
+  "version": "1.0.0",
+  "description": "FTP, FTPS ve SFTP site yöneticisi ve dosya aktarım istemcisi",
+  "main": "src/main.js",
+  "author": "FTP Masters",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "icon": "node scripts/make-icon.js",
+    "dist": "electron-builder --win",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "basic-ftp": "^5.0.5",
+    "ssh2": "^1.16.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.33.5"
+  },
+  "build": {
+    "appId": "com.ftpmasters.app",
+    "productName": "FTP Masters",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["src/**/*", "build/icon.png", "package.json"],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "artifactName": "FTP-Masters-Setup-${version}.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "FTP Masters"
+    },
+    "portable": { "artifactName": "FTP-Masters-Portable-${version}.exe" }
+  }
+}
