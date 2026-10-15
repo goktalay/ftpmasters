@@ -57,12 +57,18 @@
     "file": "10-ayarlar-hakkinda-gunduz.png",
     "theme": "light",
     "title": "Hakkında",
-    "caption": "Güncelleme denetimi ve açık kaynak lisansları; 8 dil desteği"
+    "caption": "Güncelleme denetimi ve açık kaynak lisansları"
   },
   {
     "file": "11-giris-ekrani-gece.png",
     "theme": "dark",
     "title": "Mastertool hesabıyla giriş",
     "caption": "Tek hesap: SSH Master ve FTP Masters; siteler uçtan uca şifreli"
+  },
+  {
+    "file": "12-ayarlar-genel-gunduz.png",
+    "theme": "light",
+    "title": "8 dil ve tema seçimi",
+    "caption": "Türkçe, English, Français, Deutsch, Español, العربية, 中文, Русский"
   }
 ]

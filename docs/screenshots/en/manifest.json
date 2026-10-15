@@ -1,0 +1,74 @@
+[
+  {
+    "file": "01-ana-ekran-gece.png",
+    "theme": "dark",
+    "title": "Site cards and folders",
+    "caption": "All your FTP, FTPS and SFTP sites organized in colorful cards and folders"
+  },
+  {
+    "file": "02-ana-ekran-gunduz.png",
+    "theme": "light",
+    "title": "Day theme",
+    "caption": "Night, Day or System theme; switch with one click"
+  },
+  {
+    "file": "03-site-penceresi-gece.png",
+    "theme": "dark",
+    "title": "Site window and transfer tree",
+    "caption": "My computer, server and a live transfer tree side by side"
+  },
+  {
+    "file": "04-site-penceresi-gunduz.png",
+    "theme": "light",
+    "title": "Download and upload at once",
+    "caption": "Nested folders in a tree with size and progress for every file"
+  },
+  {
+    "file": "05-site-formu-gece.png",
+    "theme": "dark",
+    "title": "Site properties",
+    "caption": "General, Actions, Type and Options tabs; test before saving"
+  },
+  {
+    "file": "06-site-formu-gunduz.png",
+    "theme": "light",
+    "title": "Site properties (day)",
+    "caption": "Label, host, login method, folder, color and comments"
+  },
+  {
+    "file": "07-site-formu-tur-gece.png",
+    "theme": "dark",
+    "title": "Protocol choice",
+    "caption": "FTP, FTPS (Implicit, AUTH SSL, AUTH TLS) and SFTP support"
+  },
+  {
+    "file": "08-sag-tik-indir-gece.png",
+    "theme": "dark",
+    "title": "Right-click to download",
+    "caption": "Right-click files and folders on the server to download them"
+  },
+  {
+    "file": "09-ayarlar-aktarimlar-gece.png",
+    "theme": "dark",
+    "title": "Speed limit and transfer settings",
+    "caption": "Optional maximum speed, concurrent transfers and retries"
+  },
+  {
+    "file": "10-ayarlar-hakkinda-gunduz.png",
+    "theme": "light",
+    "title": "About",
+    "caption": "Update check and open source licenses"
+  },
+  {
+    "file": "11-giris-ekrani-gece.png",
+    "theme": "dark",
+    "title": "Sign in with Mastertool",
+    "caption": "One account for SSH Master and FTP Masters; sites end-to-end encrypted"
+  },
+  {
+    "file": "12-ayarlar-genel-gunduz.png",
+    "theme": "light",
+    "title": "8 languages and themes",
+    "caption": "Türkçe, English, Français, Deutsch, Español, العربية, 中文, Русский"
+  }
+]
