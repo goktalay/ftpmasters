@@ -9,6 +9,7 @@ const I18N = require('./i18n');
 const { createRemote, friendlyError, PROTOCOLS } = require('./remote');
 const { Session } = require('./session');
 const { createAccount, API_BASE } = require('./account');
+const { createSso } = require('./sso');
 const { limiter } = require('./throttle');
 
 // Arayüz dili: ayarlarda seçilen ya da sistem dili (desteklenmiyorsa İngilizce)
@@ -163,8 +164,41 @@ let account = null;
 let loginWindow = null;
 let loginNotice = null; // giriş ekranında gösterilecek bilgi (ör. oturum süresi doldu)
 
+// Cihazdaki ortak oturum (tüm Mastertool uygulamaları): Windows Kimlik Bilgisi Yöneticisi'nde ortak kimlik,
+// %APPDATA%\Mastertool\sso-state.json'da durum işareti. Testlerde MASTERTOOL_SSO_DIR ve MASTERTOOL_SSO_MEMORY=1
+// ile gerçek kimlik deposuna dokunmadan çalışır.
+function createSharedSession() {
+  const stateDir = process.env.MASTERTOOL_SSO_DIR || path.join(app.getPath('appData'), 'Mastertool');
+  let memory = null;
+  const keyring = process.env.MASTERTOOL_SSO_MEMORY === '1'
+    ? { get: () => memory, set: (v) => { memory = String(v); }, del: () => { memory = null; } }
+    : undefined;
+  try {
+    return createSso({ stateDir, ...(keyring ? { keyring } : {}) });
+  } catch {
+    return null; // kimlik deposu yüklenemezse uygulama ortak oturum olmadan çalışır
+  }
+}
+
+// Başka bir Mastertool uygulamasında giriş yapıldı (ya da hesap değişti): giriş ekranını atla
+function onSharedLogin({ backupFile }) {
+  loginNotice = null;
+  if (!mainWindow) createMainWindow();
+  if (loginWindow) loginWindow.destroy();
+  if (backupFile) mainWindow.webContents.once('did-finish-load', () => mainWindow.webContents.send('account:backup', backupFile));
+  account.start();
+}
+
+const expireNotice = (code) => t({
+  app_disabled: 'auth.errAppDisabled',
+  wrong_app: 'auth.errWrongApp',
+  signed_out_elsewhere: 'auth.signedOutElsewhere',
+}[code] || 'auth.errSessionExpired');
+
 function initAccount() {
   account = createAccount({
+    sso: createSharedSession(),
+    onSharedLogin,
     userDataDir: app.getPath('userData'),
     appVersion: app.getVersion(),
     encrypt,
@@ -199,8 +233,7 @@ function initAccount() {
     onStatus: (st) => {
       for (const w of BrowserWindow.getAllWindows()) w.webContents.send('account:status', st);
     },
-    onSessionExpired: (code) =>
-      showLogin(t(code === 'app_disabled' ? 'auth.errAppDisabled' : code === 'wrong_app' ? 'auth.errWrongApp' : 'auth.errSessionExpired')),
+    onSessionExpired: (code) => showLogin(expireNotice(code)),
     onUpdate: (info) => mainWindow && mainWindow.webContents.send('app:update', info),
   });
 }
@@ -257,7 +290,11 @@ function createMainWindow() {
 
 function showMainWindow() {
   if (!account || !account.isLoggedIn()) {
-    if (loginWindow) loginWindow.focus(); else showLogin();
+    if (loginWindow) {
+      if (loginWindow.isMinimized()) loginWindow.restore();
+      loginWindow.show();
+      loginWindow.focus();
+    } else showLogin();
     return;
   }
   if (!mainWindow) createMainWindow();
@@ -748,19 +785,26 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', showMainWindow);
+  // İkinci örnek (ör. Master Tool tepsi menüsünden açılış): gizli/simge durumundaki pencereyi öne getir.
+  // Açılış henüz bitmediyse (hesap yüklenmeden) yok sayılır; ilk pencere zaten açılmak üzere.
+  app.on('second-instance', () => { if (account) showMainWindow(); });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     loadStore();
     initAccount();
-    // Uygulama girişsiz açılmaz. "Beni hatırla" ile saklı oturum varsa doğrudan açılır
-    // (çevrimdışıyken yerel kütüphaneyle), oturum sunucuda düşmüşse giriş ekranına dönülür.
-    if (account.isLoggedIn()) {
+    // Uygulama girişsiz açılmaz. Sırasıyla: kendi saklı oturumu ("Beni hatırla"; çevrimdışıyken yerel
+    // kütüphaneyle), yoksa başka bir Mastertool uygulamasında açılmış ortak oturumla şifresiz giriş,
+    // o da yoksa giriş ekranı. Başka uygulamadaki giriş/çıkışlar durum dosyasından izlenir.
+    let r = { ok: account.isLoggedIn() };
+    try { r = await account.resume(); } catch { r = { ok: account.isLoggedIn() }; }
+    if (r.ok) {
       createMainWindow();
       account.start();
     } else {
+      if (['app_disabled', 'signed_out_elsewhere'].includes(r.code)) loginNotice = expireNotice(r.code);
       createLoginWindow();
     }
+    account.startWatching();
     app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && showMainWindow());
   });
 

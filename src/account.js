@@ -26,15 +26,26 @@ const MAX_BLOB_BYTES = 5 * 1024 * 1024;
 const pbkdf2 = (pass, salt, iter, len) =>
   new Promise((resolve, reject) => crypto.pbkdf2(pass, salt, iter, len, 'sha256', (e, k) => (e ? reject(e) : resolve(k))));
 
-async function deriveKeys(password, kdf) {
+// master yalnız bu süreçte ve ortak kimlikte (Windows Kimlik Bilgisi Yöneticisi) bulunur
+async function deriveMaster(password, kdf) {
   if (!kdf || kdf.alg !== 'PBKDF2-SHA256') throw Object.assign(new Error('unsupported_kdf'), { code: 'unsupported_kdf' });
   const pw = Buffer.from(password, 'utf8');
   const master = await pbkdf2(pw, Buffer.from(kdf.salt, 'base64'), kdf.iter, 32);
   const authHash = (await pbkdf2(master, pw, 1, 32)).toString('base64');
-  const encKey = Buffer.from(crypto.hkdfSync('sha256', master, Buffer.alloc(0), Buffer.from('ftpm-enc-v1'), 32));
+  return { master, authHash };
+}
+
+const encKeyFromMaster = (master) => Buffer.from(crypto.hkdfSync('sha256', master, Buffer.alloc(0), Buffer.from('ftpm-enc-v1'), 32));
+
+async function deriveKeys(password, kdf) {
+  const { master, authHash } = await deriveMaster(password, kdf);
+  const encKey = encKeyFromMaster(master);
   master.fill(0);
   return { authHash, encKey };
 }
+
+// Ortak kimliği (sso_token) dosyada açıkça tutmadan karşılaştırmak için özeti
+const ssoTag = (token) => (token ? crypto.createHash('sha256').update(String(token)).digest('base64').slice(0, 16) : null);
 
 function encryptLibrary(key, obj) {
   const iv = crypto.randomBytes(12);
@@ -111,7 +122,10 @@ async function api(method, route, { token, body, timeout = 20000 } = {}) {
 // ---------------------------------------------------------------------------
 function createAccount(deps) {
   // deps: { userDataDir, appVersion, encrypt, decrypt, getStore, replaceLibrary, persistStore, backupAndClearLibrary,
-  //         onStatus, onSessionExpired, onUpdate }
+  //         onStatus, onSessionExpired, onUpdate, sso, onSharedLogin }
+  // sso: cihazdaki ortak oturum (src/sso.js). Altı Mastertool uygulaması aynı ortak kimliği ve durum dosyasını
+  // kullanır: birinde giriş yapılınca diğerleri şifresiz açılır, birinde çıkılınca hepsi kapanır.
+  const sso = deps.sso || null;
   const file = path.join(deps.userDataDir, 'account.json');
   const keysDir = path.join(deps.userDataDir, 'keys');
 
@@ -129,6 +143,7 @@ function createAccount(deps) {
         user: saved.user,
         kdfSalt: saved.kdfSalt,
         syncEnabled: saved.syncEnabled !== false,
+        ssoTag: saved.ssoTag || null,
       };
     } catch { session = null; }
   }
@@ -143,8 +158,9 @@ function createAccount(deps) {
       out.user = session.user;
       out.kdfSalt = session.kdfSalt;
       out.syncEnabled = session.syncEnabled;
+      out.ssoTag = session.ssoTag || null;
     } else {
-      delete out.token; delete out.encKey;
+      delete out.token; delete out.encKey; delete out.ssoTag;
     }
     out.lastSyncAt = status.lastSyncAt;
     out.libraryVersion = status.libraryVersion;
@@ -169,49 +185,166 @@ function createAccount(deps) {
 
   const deviceName = () => `${os.hostname()} (Windows)`.slice(0, 120);
 
+  // --- Ortak oturum (SSO) ----------------------------------------------------
+  let watcher = null;
+
+  // Kendi yazdığımız durumu izleyiciye "görüldü" diye bildir; aksi halde başka bir uygulamanınki sanılır
+  function bump(state) {
+    if (!sso) return;
+    try {
+      const st = sso.bumpState(state);
+      if (watcher) watcher.seen(st.gen);
+    } catch { /* durum dosyası yazılamazsa diğer uygulamalar 5 sn'lik yoklamayla da göremez; oturum yine çalışır */ }
+  }
+
+  // Farklı bir hesapla giriş: bu bilgisayardaki kütüphane başka bir hesaba ait olabilir; birleştirme yerine yedekle
+  function adoptUser(user) {
+    let backupFile = null;
+    if (saved.lastUserId && saved.lastUserId !== user.id) backupFile = deps.backupAndClearLibrary();
+    saved.lastUserId = user.id;
+    if (backupFile) { status.libraryVersion = null; status.lastSyncAt = null; }
+    return backupFile;
+  }
+
   // --- Kimlik doğrulama ----------------------------------------------------
   async function login(email, password, remember) {
     email = String(email || '').trim().toLowerCase();
     const pre = await api('POST', '/api/fm/auth/prelogin', { body: { email } });
-    const { authHash, encKey } = await deriveKeys(password, pre.kdf);
+    let { master, authHash } = await deriveMaster(password, pre.kdf);
     const res = await api('POST', '/api/fm/auth/login', {
-      body: { email, auth_hash: authHash, device: deviceName(), app_version: String(deps.appVersion).slice(0, 30) },
+      body: { email, auth_hash: authHash, device: deviceName(), app_version: String(deps.appVersion).slice(0, 30), sso: !!sso },
     });
     // Sunucu girişte güncel kdf'yi döner; tuz farklıysa (şifre başka yerde değişmiş) anahtarı yeniden türet
-    let key = encKey;
-    if (res.kdf && res.kdf.salt !== pre.kdf.salt) key = (await deriveKeys(password, res.kdf)).encKey;
+    const kdf = res.kdf || pre.kdf;
+    if (kdf.salt !== pre.kdf.salt || Number(kdf.iter) !== Number(pre.kdf.iter)) {
+      master.fill(0);
+      ({ master } = await deriveMaster(password, kdf));
+    }
+    const key = encKeyFromMaster(master);
 
-    // Farklı bir hesapla giriş: bu bilgisayardaki kütüphane başka bir hesaba ait olabilir; birleştirme yerine yedekle
-    let backupFile = null;
-    if (saved.lastUserId && saved.lastUserId !== res.user.id) backupFile = deps.backupAndClearLibrary();
+    // Ortak kimliği yaz: diğer Mastertool uygulamaları bundan sonra şifresiz açılır
+    let tag = null;
+    if (sso && res.sso_token) {
+      try {
+        sso.writeCredential({ email: (res.user && res.user.email) || email, user: res.user, sso_token: res.sso_token, master, kdf });
+        tag = ssoTag(res.sso_token);
+      } catch { /* kimlik deposu yazılamazsa uygulama yine tek başına çalışır */ }
+    }
+    master.fill(0);
 
-    session = { token: res.token, user: res.user, encKey: key, kdfSalt: (res.kdf || pre.kdf).salt, syncEnabled: res.sync_enabled !== false };
+    const backupFile = adoptUser(res.user);
+    session = { token: res.token, user: res.user, encKey: key, kdfSalt: kdf.salt, syncEnabled: res.sync_enabled !== false, ssoTag: tag };
     saved.email = email;
     saved.remember = !!remember;
-    saved.lastUserId = res.user.id;
-    if (backupFile) { status.libraryVersion = null; status.lastSyncAt = null; }
     persist();
+    if (tag) bump('in');
     setStatus({ error: null });
     return { backupFile };
   }
 
-  async function logout() {
-    const token = session && session.token;
-    session = null;
-    stopTimers();
+  // Ortak kimlikle şifresiz giriş (POST /api/fm/auth/sso). Dönüş: { ok, backupFile } | { ok:false, code }
+  // 401 → ortak oturum sunucuda bitmiş: ortak kimlik silinir, durum "out" (tüm aile için).
+  // 403 app_disabled → bu hesapta FTP Masters kapalı; ortak kimliğe dokunulmaz (diğer uygulamalar açık kalır).
+  async function ssoLogin() {
+    if (!sso) return { ok: false, code: 'no_sso' };
+    const cred = sso.readCredential();
+    if (!cred) return { ok: false, code: 'no_credential' };
+    let res;
+    try {
+      res = await api('POST', '/api/fm/auth/sso', {
+        body: { sso_token: cred.sso_token, device: deviceName(), app_version: String(deps.appVersion).slice(0, 30) },
+      });
+    } catch (e) {
+      if (e.status === 401) { sso.deleteCredential(); bump('out'); }
+      return { ok: false, code: e.code || 'error', status: e.status };
+    }
+    const master = Buffer.from(cred.master || '', 'base64');
+    if (master.length !== 32) return { ok: false, code: 'bad_credential' };
+    const key = encKeyFromMaster(master);
+    master.fill(0);
+    const kdf = res.kdf || cred.kdf || {};
+    const backupFile = adoptUser(res.user);
+    session = { token: res.token, user: res.user, encKey: key, kdfSalt: kdf.salt, syncEnabled: res.sync_enabled !== false, ssoTag: ssoTag(cred.sso_token) };
+    saved.email = String((res.user && res.user.email) || cred.email || '').toLowerCase();
+    saved.remember = true; // ortak kimlik zaten cihazda kalıcı
     persist();
-    setStatus({ state: 'idle', error: null });
-    if (token) api('POST', '/api/fm/auth/logout', { token }).catch(() => {});
+    setStatus({ error: null });
+    return { ok: true, backupFile };
   }
 
-  // Oturum sunucuda geçersiz: 401 session_expired, ya da 403 app_disabled (yönetici bu hesapta
-  // FTP Masters'ı kapattı) / wrong_app (başka uygulamanın oturumu). Yerel kütüphane korunur.
-  function expire(code = 'session_expired') {
+  // Yalnız bu uygulamanın oturumunu kapat (yerel kütüphane korunur)
+  function dropLocal() {
     session = null;
     stopTimers();
     persist();
+  }
+
+  // Kullanıcı çıkış yaptı: sunucuda oturumu kapat (ortak oturumdan türetilmişse tüm aile kapanır),
+  // ortak kimliği sil, durumu "out" yap
+  async function logout() {
+    const token = session && session.token;
+    dropLocal();
+    if (sso) { sso.deleteCredential(); bump('out'); }
+    setStatus({ state: 'idle', error: null });
+    if (token) await api('POST', '/api/fm/auth/logout', { token, timeout: 8000 }).catch(() => {});
+  }
+
+  // Oturum sunucuda geçersiz: 401 session_expired → tüm aile için kapat (ortak kimlik silinir, durum "out");
+  // 403 app_disabled (yönetici bu hesapta FTP Masters'ı kapattı) / wrong_app → yalnız bu uygulama.
+  // Yerel kütüphane her durumda korunur.
+  function expire(code = 'session_expired') {
+    dropLocal();
+    if (sso && code === 'session_expired') { sso.deleteCredential(); bump('out'); }
     setStatus({ state: 'idle', error: code });
     deps.onSessionExpired(code);
+  }
+
+  // Başka bir uygulama durum dosyasını değiştirdi: asıl bilgi ortak kimlikten okunur
+  async function syncFromShared() {
+    if (!sso) return;
+    const cred = sso.readCredential();
+    if (!cred) {
+      // Ortak kimlik yok: aile çıkış yaptı. Ortak oturuma bağlı olmayan (1.4 öncesi) oturumlara dokunma.
+      if (session && session.ssoTag) {
+        dropLocal();
+        setStatus({ state: 'idle', error: 'signed_out_elsewhere' });
+        deps.onSessionExpired('signed_out_elsewhere');
+      }
+      return;
+    }
+    if (session && session.ssoTag === ssoTag(cred.sso_token)) return; // zaten bu ortak oturumdayız
+    // Oturum yok ya da başka bir ortak oturum (başka hesapla giriş): şifresiz giriş dene
+    const r = await ssoLogin();
+    if (r.ok) {
+      if (deps.onSharedLogin) deps.onSharedLogin(r);
+    } else if (session && r.status === 401) {
+      expire('session_expired');
+    }
+  }
+
+  // Açılışta: ortak oturumla kendi oturumumuzu uzlaştır (pencere seçilmeden önce çağrılır).
+  // Dönüş: { ok } ya da { ok:false, code } (ör. app_disabled, signed_out_elsewhere, offline)
+  async function resume() {
+    if (!sso) return { ok: !!session };
+    const cred = sso.readCredential();
+    if (session && session.ssoTag) {
+      if (!cred) { dropLocal(); return { ok: false, code: 'signed_out_elsewhere' }; } // kapalıyken başka yerde çıkıldı
+      if (session.ssoTag === ssoTag(cred.sso_token)) return { ok: true };
+      dropLocal(); // başka bir hesapla ortak giriş yapılmış
+    }
+    if (session) return { ok: true }; // ortak oturuma bağlı olmayan eski (1.4 öncesi) oturum
+    if (!cred) return { ok: false, code: 'no_credential' };
+    return ssoLogin();
+  }
+
+  function startWatching() {
+    if (!sso || watcher) return;
+    watcher = sso.watch(() => { syncFromShared().catch(() => {}); });
+  }
+
+  function stopWatching() {
+    if (watcher) watcher.stop();
+    watcher = null;
   }
 
   async function authed(method, route, body) {
@@ -492,6 +625,7 @@ function createAccount(deps) {
     latestRelease,
     state: publicState,
     login, logout, start, syncNow, onLocalChange, setSyncEnabled, deleteRemote, checkUpdate,
+    ssoLogin, resume, syncFromShared, startWatching, stopWatching,
     // testler için
     _merge: merge,
   };
@@ -506,4 +640,4 @@ function compareVersions(a, b) {
   return 0;
 }
 
-module.exports = { createAccount, deriveKeys, encryptLibrary, decryptLibrary, compareVersions, API_BASE };
+module.exports = { createAccount, deriveKeys, deriveMaster, encKeyFromMaster, encryptLibrary, decryptLibrary, compareVersions, API_BASE };
