@@ -6,10 +6,14 @@
 //   için bu bağlantıdaki çağrılar sıraya alınır.
 // - Aktarımlar bir havuzdan bağlantı alır. FTP'de her eşzamanlı aktarım kendi bağlantısını açar
 //   (site ayarındaki "aynı anda en fazla aktarım" kadar); SFTP'de tek SSH bağlantısı paylaşılır.
-// - Her indirme/yükleme bir ağaç olarak tutulur (kök → klasörler → dosyalar). Klasörün boyutu ve
+// - Sunucu içinde taşıma tek bir yeniden adlandırmadır (RNFR/RNTO, SFTP rename). Kopyalama için
+//   FTP'de sunucu tarafı komut olmadığından her dosya geçici bir yerel dosya üzerinden indirilip
+//   hedefe yüklenir; aktarım ağacında "copy" türünde görünür.
+// - Her indirme/yükleme/kopyalama bir ağaç olarak tutulur (kök → klasörler → dosyalar). Klasörün boyutu ve
 //   ilerlemesi alt dosyalarının toplamıdır. Değişiklikler toplanıp ~8 kez/sn arayüze gönderilir.
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const posix = path.posix;
 const crypto = require('crypto');
@@ -208,7 +212,7 @@ class Session {
         o.speed = ['active', 'scanning', 'queued', 'retry'].includes(n.status) ? n.speed || 0 : 0;
         if (o.status !== n.reported && ['done', 'error', 'cancelled', 'skipped'].includes(o.status)) {
           n.reported = o.status;
-          if (n.kind === 'upload') {
+          if (n.kind === 'upload' || n.kind === 'copy') {
             this.invalidate(n.dstDir);
             for (const k of [...this.cache.keys()]) if (k === n.dst || k.startsWith(n.dst + '/')) this.cache.delete(k);
           }
@@ -332,6 +336,23 @@ class Session {
       await remote.download(node.src, dst, onBytes, task.ctl, opts);
       node.partial = null;
       if (node.mtime) fs.promises.utimes(dst, new Date(), new Date(node.mtime)).catch(() => {});
+    } else if (node.kind === 'copy') {
+      let dst = node.dst;
+      if (opts.conflict !== 'overwrite' && (await remote.exists(dst))) {
+        if (opts.conflict === 'skip') return true;
+        node.dst = dst = await uniqueRemotePath(remote, dst);
+      }
+      // İndirme ve yükleme ilerlemenin yarısını oluşturur; içerik birebir kalsın diye ikili aktarılır
+      const half = (n) => this.addDone(node, n / 2);
+      const tmp = path.join(os.tmpdir(), `ftpm-copy-${uid()}`);
+      try {
+        await remote.download(node.src, tmp, half, task.ctl, { ...opts, transferType: 'binary' });
+        node.partial = dst;
+        await remote.upload(tmp, dst, half, task.ctl, { ...opts, transferType: 'binary' });
+        node.partial = null;
+      } finally {
+        fs.promises.rm(tmp, { force: true }).catch(() => {});
+      }
     } else {
       let dst = node.dst;
       if (opts.conflict !== 'overwrite' && (await remote.exists(dst))) {
@@ -389,22 +410,29 @@ class Session {
     }
   }
 
+  // Uzak klasörü gezip dosyalarını kuyruğa ekler; hedef indirmede yerel, kopyalamada uzak klasördür
   async scanRemote(root) {
+    const kind = root.kind;
+    const join = kind === 'copy' ? posix.join : path.join;
     const remote = await this.acquire();
     try {
       const walk = async (dirNode) => {
-        fs.mkdirSync(dirNode.dst, { recursive: true });
+        if (kind === 'copy') {
+          try { await remote.mkdir(dirNode.dst); } catch { /* zaten var */ }
+        } else {
+          fs.mkdirSync(dirNode.dst, { recursive: true });
+        }
         const list = await remote.list(dirNode.src);
         list.sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name));
         for (const e of list) {
           if (root.cancelled) return;
           if (e.isDir) {
-            const d = this.addNode({ parentId: dirNode.id, rootId: root.id, name: e.name, isDir: true, kind: 'download', src: e.path, dst: path.join(dirNode.dst, e.name), scanning: true });
+            const d = this.addNode({ parentId: dirNode.id, rootId: root.id, name: e.name, isDir: true, kind, src: e.path, dst: join(dirNode.dst, e.name), scanning: true });
             await walk(d);
             d.scanning = false;
             this.touch(d);
           } else {
-            const f = this.addNode({ parentId: dirNode.id, rootId: root.id, name: e.name, isDir: false, kind: 'download', src: e.path, dst: path.join(dirNode.dst, e.name), size: e.size || 0, mtime: e.mtime });
+            const f = this.addNode({ parentId: dirNode.id, rootId: root.id, name: e.name, isDir: false, kind, src: e.path, dst: join(dirNode.dst, e.name), size: e.size || 0, mtime: e.mtime });
             this.registerFile(f);
             this.enqueue(f);
           }
@@ -475,6 +503,63 @@ class Session {
       root.scanning = false;
       for (const n of this.nodes.values()) if (n.rootId === root.id && n.isDir) { n.scanning = false; this.touch(n); }
       this.touch(root);
+    }
+  }
+
+  // --- Sunucu içinde taşıma / kopyalama ---------------------------------------------
+  // items: [{ path, name, isDir }] (uzak), dstDir: sunucudaki hedef klasör.
+  // Klasör kendi içine taşınamaz/kopyalanamaz; bu öğeler sessizce atlanır (arayüz önceden uyarır).
+
+  // Her öğe tek bir yeniden adlandırmayla taşınır. Aynı klasöre taşıma bir şey yapmaz.
+  async move(items, dstDir) {
+    const res = { moved: 0, skipped: 0, failed: [] };
+    const conflict = this.options().conflict;
+    for (const it of items) {
+      if (posix.dirname(it.path) === dstDir || isInside(dstDir, it.path)) { res.skipped++; continue; }
+      try {
+        const done = await this.run(async (r) => {
+          let dst = posix.join(dstDir, it.name);
+          if (await r.exists(dst)) {
+            if (conflict === 'skip') return false;
+            if (conflict === 'overwrite' && !it.isDir && !(await r.stat(dst)).isDir) await r.removeFile(dst);
+            else dst = await uniqueRemotePath(r, dst, it.isDir);
+          }
+          await r.rename(it.path, dst);
+          return true;
+        });
+        if (done) res.moved++; else res.skipped++;
+      } catch (err) {
+        res.failed.push({ name: it.name, error: this.errText(err) });
+      }
+      this.invalidate(posix.dirname(it.path));
+      for (const k of [...this.cache.keys()]) if (k === it.path || k.startsWith(it.path + '/')) this.cache.delete(k);
+    }
+    this.invalidate(dstDir);
+    return res;
+  }
+
+  // Kopyalama aktarım kuyruğunda yürür. Aynı klasöre kopyalanan öğe "ad (1)" olarak çoğaltılır.
+  async copy(items, dstDir) {
+    for (const it of items) {
+      if (isInside(dstDir, it.path)) continue;
+      let dst = posix.join(dstDir, it.name);
+      if (posix.dirname(it.path) === dstDir) dst = await this.run((r) => uniqueRemotePath(r, dst, it.isDir));
+      const name = posix.basename(dst);
+      if (!it.isDir) {
+        const node = this.addNode({ name, isDir: false, kind: 'copy', src: it.path, dst, size: it.size || 0, dstDir, startT: Date.now() });
+        node.rootId = node.id;
+        this.registerFile(node);
+        this.enqueue(node);
+        continue;
+      }
+      const root = this.addNode({ name, isDir: true, kind: 'copy', src: it.path, dst, dstDir, scanning: true, startT: Date.now() });
+      root.rootId = root.id;
+      this.scanRemote(root).catch((err) => {
+        root.error = this.errText(err);
+        root.failed++;
+        root.scanning = false;
+        this.touch(root);
+      });
     }
   }
 
@@ -557,9 +642,14 @@ function uniqueLocalPath(p) {
   }
 }
 
-async function uniqueRemotePath(remote, p) {
+// dir, p'nin kendisi ya da altındaki bir klasör mü
+function isInside(dir, p) {
+  return dir === p || dir.startsWith(p.replace(/\/+$/, '') + '/');
+}
+
+async function uniqueRemotePath(remote, p, isDir = false) {
   const dir = posix.dirname(p);
-  const ext = posix.extname(p);
+  const ext = isDir ? '' : posix.extname(p);
   const base = posix.basename(p, ext);
   for (let i = 1; ; i++) {
     const cand = posix.join(dir, `${base} (${i})${ext}`);
@@ -567,4 +657,4 @@ async function uniqueRemotePath(remote, p) {
   }
 }
 
-module.exports = { Session };
+module.exports = { Session, isInside };

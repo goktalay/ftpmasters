@@ -31,6 +31,7 @@ let remoteDir = '/';
 let localDir = '';
 let localItems = [];
 let remoteItems = [];
+let remoteClip = null; // { mode: 'cut' | 'copy', items } — sunucu içi kes/kopyala panosu
 
 // --- Ana öğeler ----------------------------------------------------------------
 document.querySelectorAll('.panel-ico').forEach((el) => (el.innerHTML = icon(el.textContent.replace(/[{}]/g, ''))));
@@ -87,10 +88,20 @@ const remoteList = new FileList(colRemote.querySelector('.file-list'), {
     if (from === 'local') upload(items);
     if (from === 'explorer' && paths.length) uploadPaths(paths);
   },
+  // Aynı panelde klasöre (ya da "..") bırakma: taşır, Ctrl basılıysa kopyalar
+  onDropInto: ({ items, dir, copy }) => {
+    const target = dir || posix.dirname(remoteDir);
+    if (copy) copyRemote(items, target); else moveRemote(items, target);
+  },
   onKey: (e, items) => {
     if (e.key === 'F5') { e.preventDefault(); loadRemote(true); }
     if (e.key === 'Delete' && items.length) deleteRemote(items);
     if (e.key === 'F2' && items.length === 1) renameRemote(items[0]);
+    if (!e.ctrlKey || !connected) return;
+    const k = e.key.toLowerCase();
+    if (k === 'x' && items.length) { e.preventDefault(); clipRemote('cut', items); }
+    if (k === 'c' && items.length) { e.preventDefault(); clipRemote('copy', items); }
+    if (k === 'v' && remoteClip) { e.preventDefault(); pasteRemote(pasteTarget(items)); }
   },
 });
 
@@ -234,6 +245,8 @@ function remoteContext(e, items) {
   if (!connected) return;
   if (!items.length) {
     contextMenu(e.clientX, e.clientY, [
+      remoteClip ? { label: t('site.paste'), icon: 'paste', kbd: 'Ctrl+V', action: () => pasteRemote(remoteDir) } : null,
+      remoteClip ? '-' : null,
       { label: t('common.newFolder'), icon: 'folderPlus', action: () => mkdirRemote() },
       { label: t('common.refresh'), icon: 'refresh', kbd: 'F5', action: () => loadRemote(true) },
       { label: t('common.copyPath'), icon: 'copy', action: () => window.api.clipboardWrite(remoteDir) },
@@ -241,6 +254,7 @@ function remoteContext(e, items) {
     return;
   }
   const one = items.length === 1 ? items[0] : null;
+  const into = one && one.isDir ? one : null;
   contextMenu(e.clientX, e.clientY, [
     {
       label: items.length > 1 ? t('site.downloadN', { n: items.length }) : t('site.download'),
@@ -250,6 +264,16 @@ function remoteContext(e, items) {
     '-',
     one && one.isDir ? { label: t('common.open'), icon: 'open', kbd: 'Enter', action: () => goRemote(one.path) } : null,
     one ? { label: t('common.rename'), icon: 'edit', kbd: 'F2', action: () => renameRemote(one) } : null,
+    one ? '-' : null,
+    { label: t('site.cut'), icon: 'cut', kbd: 'Ctrl+X', action: () => clipRemote('cut', items) },
+    { label: t('site.copy'), icon: 'copy', kbd: 'Ctrl+C', action: () => clipRemote('copy', items) },
+    remoteClip ? {
+      label: into ? t('site.pasteInto', { name: into.name }) : t('site.paste'),
+      icon: 'paste', kbd: 'Ctrl+V', action: () => pasteRemote(pasteTarget(items)),
+    } : null,
+    { label: t('site.moveTo'), icon: 'move', action: () => askTarget('move', items) },
+    { label: t('site.copyTo'), icon: 'copy', action: () => askTarget('copy', items) },
+    '-',
     { label: t('common.copyPath'), icon: 'copy', action: () => window.api.clipboardWrite(items.map((x) => x.path).join('\n')) },
     { label: t('common.newFolder'), icon: 'folderPlus', action: () => mkdirRemote() },
     '-',
@@ -287,6 +311,80 @@ async function deleteRemote(items) {
   } catch (err) { toast(t('site.deleteFail'), { type: 'err', sub: cleanErr(err) }); }
   tst.remove();
   await loadRemote(true);
+}
+
+// --- Sunucu içinde taşı / kopyala ---------------------------------------------------
+const remoteItem = ({ path, name, isDir, isLink, size }) => ({ path, name, isDir: isDir && !isLink, size });
+
+function clipRemote(mode, items) {
+  remoteClip = { mode, items: items.map(remoteItem) };
+  remoteList.setCut(mode === 'cut' ? items.map((x) => x.path) : []);
+  toast(t(mode === 'cut' ? 'site.cutN' : 'site.copiedN', { n: items.length }), { sub: t('site.pasteHint') });
+}
+
+// Tek bir klasör seçiliyse onun içine, değilse açık klasöre yapıştırılır
+function pasteTarget(items) {
+  return items.length === 1 && items[0].isDir ? items[0].path : remoteDir;
+}
+
+async function pasteRemote(dir) {
+  if (!remoteClip) return;
+  const { mode, items } = remoteClip;
+  if (mode === 'cut') {
+    remoteClip = null;
+    remoteList.setCut([]);
+    await moveRemote(items, dir);
+  } else {
+    await copyRemote(items, dir);
+  }
+}
+
+// Hedef klasörün yolunu sorar; göreli yol açık klasöre göre çözülür
+async function askTarget(mode, items) {
+  const raw = await prompt(t(mode === 'move' ? 'site.moveTitle' : 'site.copyTitle'), {
+    label: t('site.targetDir'), value: remoteDir, okText: t(mode === 'move' ? 'common.move' : 'site.copy'), iconName: mode === 'move' ? 'move' : 'copy',
+  });
+  if (!raw) return;
+  let dir = raw.startsWith('/') ? raw : posix.join(remoteDir, raw);
+  dir = dir.replace(/\/+$/, '') || '/';
+  try {
+    if (!(await window.api.siteStat(dir)).isDir) throw new Error();
+  } catch {
+    toast(t('site.targetNotFound'), { type: 'err', sub: dir });
+    return;
+  }
+  if (mode === 'move') moveRemote(items, dir); else copyRemote(items, dir);
+}
+
+// Klasörü kendi içine taşıma/kopyalama engellenir
+function withoutSelf(items, dir) {
+  const ok = items.filter((it) => !(it.isDir && (dir === it.path || dir.startsWith(it.path + '/'))));
+  if (ok.length < items.length) toast(t('site.intoSelf'), { type: 'err' });
+  return ok;
+}
+
+async function moveRemote(items, dir) {
+  if (!connected) return;
+  items = withoutSelf(items.map(remoteItem), dir).filter((it) => posix.dirname(it.path) !== dir);
+  if (!items.length) return;
+  const tst = toast(t('site.moving'), { timeout: 0 });
+  try {
+    const r = await window.api.siteMove(items, dir);
+    if (r.failed.length) toast(t('site.moveFail'), { type: 'err', sub: r.failed.map((f) => `${f.name}: ${f.error}`).join('\n'), timeout: 6000 });
+    else if (r.moved) toast(t('site.movedN', { n: r.moved }), { type: 'ok', sub: dir });
+  } catch (err) { toast(t('site.moveFail'), { type: 'err', sub: cleanErr(err) }); }
+  tst.remove();
+  await loadRemote(true);
+}
+
+async function copyRemote(items, dir) {
+  if (!connected) return;
+  items = withoutSelf(items.map(remoteItem), dir);
+  if (!items.length) return;
+  try {
+    await window.api.siteCopy(items, dir);
+  } catch (err) { toast(t('site.copyFail'), { type: 'err', sub: cleanErr(err) }); return; }
+  if (colTransfers.classList.contains('closed')) setTransfersOpen(true);
 }
 
 // --- İndir / yükle ---------------------------------------------------------------
@@ -377,9 +475,10 @@ window.api.onTransferRootDone((r) => {
     if (r.status === 'done') toast(t('tr.downloadDone'), { type: 'ok', sub: r.name });
   } else {
     if (r.dstDir === remoteDir) loadRemote(true);
-    if (r.status === 'done') toast(t('tr.uploadDone'), { type: 'ok', sub: r.name });
+    if (r.status === 'done') toast(t(r.kind === 'copy' ? 'tr.copyDone' : 'tr.uploadDone'), { type: 'ok', sub: r.name });
   }
-  if (r.status === 'error') toast(t(r.kind === 'download' ? 'tr.downloadFailed' : 'tr.uploadFailed', { name: r.name }), { type: 'err', sub: r.failed > 1 ? t('tr.failedFiles', { n: r.failed }) : '' });
+  const failKey = { download: 'tr.downloadFailed', upload: 'tr.uploadFailed', copy: 'tr.copyFailed' }[r.kind];
+  if (r.status === 'error') toast(t(failKey, { name: r.name }), { type: 'err', sub: r.failed > 1 ? t('tr.failedFiles', { n: r.failed }) : '' });
 });
 
 // --- Durum çubuğu -------------------------------------------------------------------

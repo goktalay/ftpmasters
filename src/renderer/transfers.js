@@ -1,6 +1,6 @@
 'use strict';
 
-// Aktarım ağacı: her indirme/yükleme bir kök satırdır; klasörler iç içe açılır.
+// Aktarım ağacı: her indirme/yükleme/sunucu içi kopyalama bir kök satırdır; klasörler iç içe açılır.
 // Sütunlar: Ad (ağaç) | Boyut | İlerleme | Durum — başlıktaki tutamaçlarla genişletilip daraltılır.
 // Binlerce dosyada akıcı kalması için yalnızca görünen satırlar çizilir (sanal kaydırma).
 
@@ -156,7 +156,7 @@ class TransferTree {
       const n = this.nodes.get(id);
       if (FINISHED.includes(n.status)) continue;
       active++;
-      if (n.kind === 'download') down += n.speed || 0; else up += n.speed || 0;
+      if (n.kind === 'download') down += n.speed || 0; else if (n.kind === 'upload') up += n.speed || 0;
     }
     return { active, down, up, total: this.roots.length };
   }
@@ -227,7 +227,7 @@ class TransferTree {
         ? `<span class="caret ${this.collapsed.has(n.id) ? 'closed' : ''}">${icon('chevronDown')}</span>`
         : '<span class="caret none"></span>';
       const ico = !n.parentId
-        ? icon(n.kind === 'download' ? 'download' : 'upload', `kind ${n.kind}`)
+        ? icon({ download: 'download', upload: 'upload', copy: 'copy' }[n.kind], `kind ${n.kind}`)
         : n.isDir ? icon('folder', 'ico-dir') : icon('file', 'ico-file');
       const sub = !n.parentId && n.isDir ? icon('folder', 'ico-dir') : '';
       const title = esc(n.error ? `${n.name}\n${n.error}` : `${n.src || ''}\n→ ${n.dst || ''}`);

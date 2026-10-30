@@ -58,6 +58,8 @@ contextBridge.exposeInMainWorld('api', {
   siteMkdir: (p) => ipcRenderer.invoke('site:mkdir', p),
   siteRename: (from, to) => ipcRenderer.invoke('site:rename', { from, to }),
   siteDelete: (items) => ipcRenderer.invoke('site:delete', items),
+  siteMove: (items, dstDir) => ipcRenderer.invoke('site:move', { items, dstDir }),
+  siteCopy: (items, dstDir) => ipcRenderer.invoke('site:copy', { items, dstDir }),
   siteDownload: (items, localDir) => ipcRenderer.invoke('site:download', { items, localDir }),
   siteUpload: (paths, remoteDir) => ipcRenderer.invoke('site:upload', { paths, remoteDir }),
   siteLastDir: (remote, local) => ipcRenderer.send('site:lastDir', { remote, local }),
