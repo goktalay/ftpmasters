@@ -21,6 +21,7 @@ Derlenmiş exe'ler [Releases](https://github.com/goktalay/ftpmasters/releases) s
 - **Site penceresi** (karta çift tıklayınca ayrı pencerede açılır):
   - **Sol — Bilgisayarım:** Windows dosya yöneticisi. Hızlı erişim ve sürücüler. Genişliği sürüklenerek değişir, Ctrl+B ile tamamen kapanıp açılır. Sağ tık → **Yükle**: seçili dosya/klasörler sunucudaki açık klasöre yüklenir.
   - **Orta — Sunucu:** uzak klasörler ve dosyalar. Sağ tık → **İndir**: soldaki açık Windows klasörüne iner. Yeniden adlandırma, silme ve yeni klasör de burada.
+  - **Sunucu içinde taşıma ve kopyalama:** sağ tık → **Kes / Kopyala / Yapıştır** (Ctrl+X / Ctrl+C / Ctrl+V) ya da **Taşı… / Kopyala…** ile hedef klasör yazılır. Tek bir klasör seçiliyken yapıştırınca onun içine, değilse açık klasöre yapıştırılır. Öğeleri sunucu panelinde bir klasörün (ya da "..") üzerine sürükleyip bırakmak taşır, Ctrl basılıyken bırakmak kopyalar. Taşıma sunucuda tek bir yeniden adlandırmadır, anında biter. Kopyalamada FTP'nin sunucu içi kopyalama komutu olmadığından dosyalar geçici olarak indirilip hedefe yüklenir ve aktarım ağacında ilerlemesiyle görünür. Aynı klasöre kopyalanan öğe "ad (1)" olur; aynı adlı hedefte sitenin "aynı adlı dosya" kuralı uygulanır. Bir klasör kendi içine taşınamaz veya kopyalanamaz.
   - Paneller arasında ve Windows Gezgini'nden **sürükle-bırak**.
   - **Sağ — Aktarımlar:** her indirme/yükleme bir **ağaç** olarak görünür; klasörler iç içe açılır. Sütunlar **Ad · Boyut · İlerleme · Durum** başlıktan genişletilip daraltılır. Klasörlerin boyutu ve yüzdesi alt dosyalarının toplamıdır. İptal, yeniden dene ve bitenleri temizle seçenekleri var. Ctrl+J ile aç/kapat.
 - **Ayarlar** (Mastertool ortak iskeleti: Genel · Hesap · Aktarımlar · Hakkında): 8 dil — Türkçe, English, Français, Deutsch, Español, العربية (sağdan sola), 中文, Русский; ilk açılışta Windows dili, listede yoksa İngilizce. Gece / Gündüz / Sistem teması (varsayılan Sistem; üst çubuktaki güneş/ay düğmesiyle de değişir), Windows oturumu açılınca başlat, **en yüksek hız sınırı** (KB/s, istenirse açılır; tüm aktarımların toplam hızını sınırlar), genel aktarım varsayılanları.
@@ -50,7 +51,7 @@ npm start
 npm test
 ```
 
-Ortak oturum ve kimlik deposu testleri sahte sunucu ve bellek içi kimlik deposuyla çalışır; gerçek Windows Kimlik Bilgisi Yöneticisi'ne dokunmaz.
+Ortak oturum ve kimlik deposu testleri sahte sunucu ve bellek içi kimlik deposuyla çalışır; gerçek Windows Kimlik Bilgisi Yöneticisi'ne dokunmaz. Sunucu içi taşıma/kopyalama testleri bellek içi bir uzak dosya sistemiyle çalışır.
 
 ## Exe derleme
 

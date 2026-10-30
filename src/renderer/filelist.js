@@ -1,7 +1,8 @@
 'use strict';
 
 // Yerel ve uzak panelin ortak dosya listesi: sütun başlıkları (tıklayınca sıralar), çoklu seçim
-// (Ctrl / Shift / Ctrl+A), klavye, sağ tık ve paneller arası sürükle-bırak.
+// (Ctrl / Shift / Ctrl+A), klavye, sağ tık, paneller arası sürükle-bırak ve aynı panelde bir
+// klasörün (ya da "..") üzerine bırakarak taşıma/kopyalama.
 
 const DRAG_TYPE = 'application/x-ftpm-files';
 
@@ -15,6 +16,8 @@ class FileList {
    * @param {Function} o.onContext    (event, items) => void   items boşsa boş alana sağ tık
    * @param {Function} o.onDropItems  ({ from, items, paths }) => void
    * @param {Function} o.onKey        (event, items) => void   Delete, F2 vb.
+   * @param {Function} [o.onDropInto] ({ items, dir, copy }) => void   aynı panelde klasöre bırakma
+   *                                  (Ctrl basılıysa copy: true); verilmezse kapalıdır
    */
   constructor(el, o) {
     this.el = el;
@@ -25,6 +28,7 @@ class FileList {
     this.anchor = null;
     this.sort = { key: 'name', dir: 1 };
     this.canUp = false;
+    this.cut = new Set(); // kesilmiş (taşınmayı bekleyen) öğelerin yolları
 
     el.innerHTML = `<div class="fl-head">
         <button data-k="name">${esc(t('site.colName'))}</button>
@@ -108,6 +112,7 @@ class FileList {
   upRow() {
     const r = h(`<div class="row up" data-up="1"><span class="c-name">${icon('up', 'ico-up')}<span class="nm">..</span></span><span></span><span class="c-date"></span></div>`);
     r.addEventListener('dblclick', () => this.o.onUp());
+    this.dropInto(r, null);
     return r;
   }
 
@@ -132,7 +137,7 @@ class FileList {
     this.view.forEach((it, i) => {
       const ico = it.isDir ? icon(it.isLink ? 'link' : 'folder', 'ico-dir') : icon(it.isLink ? 'link' : 'file', it.isLink ? 'ico-link' : 'ico-file');
       const date = it.mtime ? formatDate(it.mtime) : (it.raw || '');
-      const row = h(`<div class="row ${this.selected.has(it.path) ? 'sel' : ''} ${it.name.startsWith('.') ? 'dim' : ''}" data-i="${i}" draggable="true">
+      const row = h(`<div class="row ${this.selected.has(it.path) ? 'sel' : ''} ${it.name.startsWith('.') ? 'dim' : ''} ${this.cut.has(it.path) ? 'cut' : ''}" data-i="${i}" draggable="true">
         <span class="c-name">${ico}<span class="nm">${esc(it.name)}</span></span>
         <span class="c-size">${it.isDir ? '' : esc(formatSize(it.size))}</span>
         <span class="c-date">${esc(date)}</span></div>`);
@@ -150,11 +155,38 @@ class FileList {
       row.addEventListener('dragstart', (e) => {
         if (!this.selected.has(it.path)) { this.selected = new Set([it.path]); this.paintSel(); }
         FileList.prototype.dragFrom = this.o.kind;
-        e.dataTransfer.effectAllowed = 'copy';
+        e.dataTransfer.effectAllowed = 'copyMove';
         e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ from: this.o.kind, items: this.selectedItems() }));
       });
       row.addEventListener('dragend', () => { FileList.prototype.dragFrom = null; });
+      if (it.isDir) this.dropInto(row, it);
     });
+  }
+
+  // Aynı panelden sürüklenen öğeler bir klasör satırına (dir null ise ".." satırına) bırakılabilir
+  dropInto(row, dir) {
+    if (!this.o.onDropInto) return;
+    const ok = (e) => this.dragFrom === this.o.kind && e.dataTransfer.types.includes(DRAG_TYPE) && !(dir && this.selected.has(dir.path));
+    row.addEventListener('dragover', (e) => {
+      if (!ok(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
+      row.classList.add('drop-into');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drop-into'));
+    row.addEventListener('drop', (e) => {
+      row.classList.remove('drop-into');
+      if (!ok(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const d = JSON.parse(e.dataTransfer.getData(DRAG_TYPE));
+      this.o.onDropInto({ items: d.items, dir: dir ? dir.path : null, copy: e.ctrlKey });
+    });
+  }
+
+  setCut(paths) {
+    this.cut = new Set(paths);
+    this.body.querySelectorAll('.row[data-i]').forEach((r) => r.classList.toggle('cut', this.cut.has(this.view[r.dataset.i].path)));
   }
 
   click(it, e) {

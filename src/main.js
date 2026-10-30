@@ -433,6 +433,9 @@ ipcMain.handle('site:delete', wrap(async (event, items) => {
   }
 }));
 
+ipcMain.handle('site:move', wrap((event, { items, dstDir }) => getSession(event).move(items, dstDir)));
+ipcMain.handle('site:copy', wrap((event, { items, dstDir }) => getSession(event).copy(items, dstDir)));
+
 ipcMain.handle('site:download', (event, { items, localDir }) => getSession(event).download(items, localDir));
 ipcMain.handle('site:upload', (event, { paths, remoteDir }) => getSession(event).upload(paths, remoteDir));
 
